@@ -1,26 +1,161 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
+
+  --color-canvas: #f7f5f2;
+  --color-surface: #ffffff;
+  --color-line: #e7e2db;
+  --color-ink: #1c1917;
+  --color-muted: #78716c;
+  --color-accent: #8c6a3d;
+  --color-accent-soft: #f4ede3;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  body {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
   }
-}
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  select,
+  textarea {
+    width: 100%;
+    border: 1px solid var(--color-line);
+    border-radius: 0.5rem;
+    background: var(--color-surface);
+    padding: 0.5rem 0.7rem;
+    font: inherit;
+    font-size: 0.875rem;
+    transition: border-color 120ms, box-shadow 120ms;
+  }
+
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px var(--color-accent-soft);
+  }
+
+  input[type="checkbox"] {
+    accent-color: var(--color-ink);
+    width: 1rem;
+    height: 1rem;
+  }
+
+  input[type="file"] {
+    font-size: 0.875rem;
+  }
+
+  input[type="file"]::file-selector-button {
+    margin-right: 0.75rem;
+    border: 1px solid var(--color-line);
+    border-radius: 0.5rem;
+    background: var(--color-surface);
+    padding: 0.4rem 0.8rem;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  button,
+  .button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    border: 1px solid var(--color-ink);
+    border-radius: 0.5rem;
+    background: var(--color-ink);
+    color: #fff;
+    padding: 0.5rem 0.9rem;
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: opacity 120ms, background-color 120ms;
+  }
+
+  button:hover,
+  .button:hover {
+    opacity: 0.9;
+  }
+
+  button:disabled {
+    cursor: progress;
+    opacity: 0.6;
+  }
+
+  button.ghost,
+  .button.ghost {
+    border-color: var(--color-line);
+    background: var(--color-surface);
+    color: var(--color-ink);
+  }
+
+  button.ghost:hover,
+  .button.ghost:hover {
+    background: var(--color-canvas);
+    opacity: 1;
+  }
+
+  button.danger {
+    border-color: transparent;
+    background: transparent;
+    color: #b91c1c;
+    padding-inline: 0.5rem;
+  }
+
+  button.danger:hover {
+    background: #fef2f2;
+    opacity: 1;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+
+  th,
+  td {
+    border-bottom: 1px solid var(--color-line);
+    padding: 0.75rem 1rem;
+    text-align: left;
+    vertical-align: middle;
+  }
+
+  th {
+    background: #faf9f7;
+    color: var(--color-muted);
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  tbody tr:hover td {
+    background: #fcfbf9;
+  }
+
+  a {
+    text-underline-offset: 3px;
+  }
+
+  summary {
+    cursor: pointer;
+    list-style: none;
+  }
+
+  summary::-webkit-details-marker {
+    display: none;
+  }
 }
