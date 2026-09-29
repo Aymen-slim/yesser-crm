@@ -52,14 +52,14 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
       <Card className="p-8 print:border-0 print:p-0 print:shadow-none">
         <header className="flex flex-wrap items-start justify-between gap-6 border-b border-line pb-6">
           <div>
-            <p className="font-display text-2xl">{invoice.issuer_name}</p>
+            <p className="font-display text-2xl font-semibold tracking-tight">{invoice.issuer_name}</p>
             {invoice.issuer_address ? <p className="mt-1 text-sm text-muted">{invoice.issuer_address}</p> : null}
             {invoice.issuer_phone ? <p className="text-sm text-muted">{invoice.issuer_phone}</p> : null}
             {invoice.tax_id ? <p className="text-sm text-muted">{messages.invoice.taxId}: {invoice.tax_id}</p> : null}
           </div>
           <div className="text-right">
             <p className="text-xs tracking-[0.16em] text-muted uppercase">{messages.invoice.title}</p>
-            <p className="font-display text-2xl">{invoice.number}</p>
+            <p className="font-display text-2xl font-semibold tracking-tight">{invoice.number}</p>
             <p className="mt-1 text-sm text-muted">{formatDate(invoice.issued_on, locale)}</p>
           </div>
         </header>

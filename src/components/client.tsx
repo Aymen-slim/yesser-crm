@@ -36,18 +36,180 @@ export function MonthJump({ month, add, label }: { month: string; add: string | 
   );
 }
 
+export function OfferPackageFields({
+  packages,
+  packageId,
+  price,
+  labels,
+}: {
+  packages: { id: string; name: string; price_millimes: number }[];
+  packageId: string;
+  price: string;
+  labels: { package: string; basePrice: string; none: string };
+}) {
+  const [selected, setSelected] = useState(packageId);
+  const [amount, setAmount] = useState(price);
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <label className="flex flex-col gap-1.5 text-sm">
+        <span className="font-medium text-muted">{labels.package}</span>
+        <select
+          name="package_id"
+          value={selected}
+          onChange={(event) => {
+            const next = event.target.value;
+            setSelected(next);
+            const pack = packages.find((item) => item.id === next);
+            setAmount(pack ? (pack.price_millimes / 1000).toFixed(3) : "");
+          }}
+        >
+          <option value="">{labels.none}</option>
+          {packages.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex flex-col gap-1.5 text-sm">
+        <span className="font-medium text-muted">{labels.basePrice}</span>
+        <input
+          name="package_price"
+          inputMode="decimal"
+          placeholder="0.000"
+          value={amount}
+          disabled={!selected}
+          onChange={(event) => setAmount(event.target.value)}
+          required={Boolean(selected)}
+        />
+      </label>
+    </div>
+  );
+}
+
+export function ExtraPriceFields({
+  extras,
+  labels,
+}: {
+  extras: { id: string; name: string; price_millimes: number }[];
+  labels: { extra: string; price: string; choose: string };
+}) {
+  const [selected, setSelected] = useState("");
+  const [amount, setAmount] = useState("");
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <label className="flex flex-col gap-1.5 text-sm">
+        <span className="font-medium text-muted">{labels.extra}</span>
+        <select
+          name="extra_id"
+          value={selected}
+          required
+          onChange={(event) => {
+            const next = event.target.value;
+            setSelected(next);
+            const extra = extras.find((item) => item.id === next);
+            setAmount(extra ? (extra.price_millimes / 1000).toFixed(3) : "");
+          }}
+        >
+          <option value="">{labels.choose}</option>
+          {extras.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex flex-col gap-1.5 text-sm">
+        <span className="font-medium text-muted">{labels.price}</span>
+        <input
+          name="price"
+          inputMode="decimal"
+          placeholder="0.000"
+          value={amount}
+          onChange={(event) => setAmount(event.target.value)}
+          required
+        />
+      </label>
+    </div>
+  );
+}
+
+export function LineList({
+  name,
+  lines,
+  addLabel,
+  placeholder,
+  removeLabel,
+}: {
+  name: string;
+  lines: string[];
+  addLabel: string;
+  placeholder: string;
+  removeLabel: string;
+}) {
+  const [rows, setRows] = useState(() =>
+    (lines.length ? lines : [""]).map((value) => ({ key: crypto.randomUUID(), value })),
+  );
+
+  return (
+    <div className="flex flex-col gap-2">
+      {rows.map((row, index) => (
+        <div key={row.key} className="flex items-center gap-2">
+          <span className="w-4 shrink-0 text-center text-muted" aria-hidden>
+            •
+          </span>
+          <span className="min-w-0 flex-1">
+            <input
+              name={name}
+              value={row.value}
+              placeholder={index === 0 ? placeholder : ""}
+              aria-label={`${placeholder} ${index + 1}`}
+              maxLength={160}
+              onChange={(event) => {
+                const value = event.target.value;
+                setRows((current) => current.map((item) => (item.key === row.key ? { ...item, value } : item)));
+              }}
+            />
+          </span>
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => setRows((current) => current.filter((item) => item.key !== row.key))}
+          >
+            {removeLabel}
+          </button>
+        </div>
+      ))}
+      <div>
+        <button
+          type="button"
+          className="ghost"
+          disabled={rows.length >= 40}
+          onClick={() => setRows((current) => [...current, { key: crypto.randomUUID(), value: "" }])}
+        >
+          {addLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function SubmitButton({
   children,
   pendingLabel = "…",
   className,
+  form,
 }: {
   children: React.ReactNode;
   pendingLabel?: string;
   className?: string;
+  form?: string;
 }) {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" disabled={pending} className={className} aria-busy={pending}>
+    <button type="submit" form={form} disabled={pending} className={className} aria-busy={pending}>
       {pending ? pendingLabel : children}
     </button>
   );
@@ -77,25 +239,6 @@ export function ConfirmSubmit({
   );
 }
 
-const ICONS: Record<string, string> = {
-  "/": "M3 12l9-8 9 8M5 10v10h14V10",
-  "/clients": "M16 19v-1a4 4 0 00-8 0v1M12 11a3 3 0 100-6 3 3 0 000 6z",
-  "/weddings": "M12 20s-7-4.5-7-10a4 4 0 017-2.6A4 4 0 0119 10c0 5.5-7 10-7 10z",
-  "/packages": "M4 8l8-4 8 4v8l-8 4-8-4zM4 8l8 4 8-4M12 12v8",
-  "/calendar": "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4",
-  "/payments": "M3 7h18v10H3zM3 11h18M7 15h3",
-  "/expenses": "M12 3v18M17 7H9.5a2.5 2.5 0 000 5h5a2.5 2.5 0 010 5H6",
-  "/team": "M9 11a3 3 0 100-6 3 3 0 000 6zM3 19v-1a5 5 0 0110 0v1M16 11a3 3 0 100-6M21 19v-1a5 5 0 00-4-4.9",
-};
-
-function Icon({ href }: { href: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d={ICONS[href]} />
-    </svg>
-  );
-}
-
 function LanguageSwitcherInner({
   locale,
   label,
@@ -112,7 +255,7 @@ function LanguageSwitcherInner({
 
   return (
     <div
-      className={`inline-flex rounded-lg border border-line bg-surface p-0.5 text-xs font-medium ${className}`}
+      className={`inline-flex rounded-full bg-track p-0.5 text-xs font-medium ${className}`}
       role="group"
       aria-label={label}
     >
@@ -127,8 +270,8 @@ function LanguageSwitcherInner({
           <input type="hidden" name="return_to" value={returnTo} />
           <button
             type="submit"
-            className={`rounded-md px-2.5 py-1 transition-colors ${
-              locale === code ? "bg-ink text-white" : "text-muted hover:text-ink"
+            className={`rounded-full border-0 px-2.5 py-1 text-xs font-semibold shadow-none transition-colors ${
+              locale === code ? "bg-ink text-white" : "bg-transparent text-muted hover:text-ink"
             }`}
             aria-pressed={locale === code}
           >
@@ -141,7 +284,7 @@ function LanguageSwitcherInner({
 }
 
 function LanguageSwitcherFallback({ className = "" }: { className?: string }) {
-  return <div className={`inline-flex h-[30px] w-[72px] rounded-lg border border-line bg-surface ${className}`} aria-hidden />;
+  return <div className={`inline-flex h-[30px] w-[72px] rounded-full bg-track ${className}`} aria-hidden />;
 }
 
 export function LanguageSwitcher(props: { locale: Locale; label: string; className?: string }) {
@@ -152,18 +295,26 @@ export function LanguageSwitcher(props: { locale: Locale; label: string; classNa
   );
 }
 
+function navClass(active: boolean) {
+  return `rounded-full px-3.5 py-2 text-sm font-medium whitespace-nowrap no-underline transition-colors ${
+    active ? "bg-ink text-white" : "text-muted hover:text-ink"
+  }`;
+}
+
 export function NavLinks({
   items,
   mobileFooter,
   menuLabel,
   closeLabel,
   languageSwitcher,
+  desktopExtra,
 }: {
   items: { href: string; label: string }[];
   mobileFooter?: React.ReactNode;
   menuLabel: string;
   closeLabel: string;
   languageSwitcher?: React.ReactNode;
+  desktopExtra?: React.ReactNode;
 }) {
   const pathname = usePathname();
   const [openedOn, setOpenedOn] = useState<string | null>(null);
@@ -175,13 +326,33 @@ export function NavLinks({
     return pathname === href || pathname.startsWith(`${href}/`);
   };
 
+  const links = (stacked: boolean) =>
+    items.map((link) => {
+      const active = isActive(link.href);
+      return (
+        <Link
+          key={link.href}
+          href={link.href}
+          prefetch={false}
+          aria-current={active ? "page" : undefined}
+          className={stacked ? `${navClass(active)} ${active ? "" : "hover:bg-canvas"}` : navClass(active)}
+        >
+          {link.label}
+        </Link>
+      );
+    });
+
   return (
     <>
-      <div className="absolute top-4 right-4 flex items-center gap-2 md:hidden">
+      <nav className="hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto md:flex [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {links(false)}
+      </nav>
+      <div className="ml-auto flex shrink-0 items-center gap-2 md:ml-0">
         {languageSwitcher}
+        <div className="hidden md:block">{desktopExtra}</div>
         <button
           type="button"
-          className="ghost"
+          className="ghost md:hidden"
           aria-expanded={open}
           aria-controls="studio-nav"
           onClick={() => setOpenedOn(open ? null : pathname)}
@@ -189,26 +360,12 @@ export function NavLinks({
           {open ? closeLabel : menuLabel}
         </button>
       </div>
-      <nav id="studio-nav" className={`${open ? "flex" : "hidden"} flex-col gap-0.5 px-3 pb-4 md:flex`}>
-        {items.map((link) => {
-          const active = isActive(link.href);
-          return (
-            <Link
-              key={link.href}
-              href={link.href}
-              prefetch={false}
-              aria-current={active ? "page" : undefined}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm no-underline transition-colors ${
-                active ? "bg-ink text-white" : "text-stone-600 hover:bg-canvas hover:text-ink"
-              }`}
-            >
-              <Icon href={link.href} />
-              {link.label}
-            </Link>
-          );
-        })}
-        {mobileFooter ? <div className="mt-3 border-t border-line pt-3 md:hidden">{mobileFooter}</div> : null}
-      </nav>
+      {open ? (
+        <nav id="studio-nav" className="absolute inset-x-0 top-full z-30 flex flex-col gap-1 border-b border-line bg-surface px-4 py-3 md:hidden">
+          {links(true)}
+          {mobileFooter}
+        </nav>
+      ) : null}
     </>
   );
 }

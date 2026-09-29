@@ -71,7 +71,7 @@ export default async function TeamMemberPage({
       <Banner error={query.error} notice={query.notice} />
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-display text-xl">{month.label}</h2>
+        <h2 className="font-display text-xl font-semibold tracking-tight">{month.label}</h2>
         <MonthNav path={`/team/${id}`} prev={month.prev} next={month.next} isCurrent={month.key === thisMonth} />
       </div>
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -100,7 +100,7 @@ export default async function TeamMemberPage({
                   <span className="flex items-center gap-3">
                     <span className="text-right">
                       <span className="block font-medium">{formatTnd(job.pay)}</span>
-                      <span className={`block text-xs ${job.paidAt ? "text-emerald-700" : "text-muted"}`}>
+                      <span className={`block text-xs ${job.paidAt ? "text-ink" : "text-muted"}`}>
                         {job.paidAt ? fill(messages.common.paidOn, { date: formatDate(job.paidAt, locale) }) : messages.common.notPaid}
                       </span>
                     </span>

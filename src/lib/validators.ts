@@ -21,6 +21,13 @@ const optionalEmail = z
   .or(z.literal(""))
   .optional();
 
+const optionalUrl = z
+  .string()
+  .trim()
+  .max(2000)
+  .default("")
+  .refine((value) => value === "" || /^https?:\/\/\S+$/i.test(value), "err_url");
+
 const flag = z
   .string()
   .optional()
@@ -104,6 +111,58 @@ export const packageSchema = z.object({
   active: flag,
 });
 
+export const extraSchema = z.object({
+  name: z.string().trim().min(1, "err_name").max(80),
+  price: money,
+  active: flag,
+});
+
+export const offerSchema = z
+  .object({
+    wedding_id: z.string().uuid(),
+    package_id: z.string().uuid().or(z.literal("")).default(""),
+    package_price: optionalMoney,
+  })
+  .refine((data) => !data.package_id || data.package_price != null, { message: "err_amount" });
+
+export const weddingExtraSchema = z.object({
+  wedding_id: z.string().uuid(),
+  extra_id: z.string().uuid("err_extra"),
+  price: money,
+});
+
+export const weddingExtraPriceSchema = z.object({
+  id: z.string().uuid(),
+  wedding_id: z.string().uuid(),
+  price: money,
+});
+
+export const weddingDaySchema = z.object({
+  wedding_id: z.string().uuid(),
+  day_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "err_date"),
+  start_time: z.string().regex(/^\d{2}:\d{2}$/).or(z.literal("")).default(""),
+  label: z.string().trim().max(80).default(""),
+});
+
+export const weddingPlaceSchema = z
+  .object({
+    wedding_id: z.string().uuid(),
+    label: z.string().trim().max(80).default(""),
+    venue_name: z.string().trim().max(120).default(""),
+    city: z.string().trim().max(80).default(""),
+    location_url: optionalUrl,
+  })
+  .refine((data) => data.venue_name || data.city || data.location_url, { message: "err_place" });
+
+export const weddingChildSchema = z.object({
+  id: z.string().uuid(),
+  wedding_id: z.string().uuid(),
+});
+
+export const weddingFeaturesSchema = z.object({
+  wedding_id: z.string().uuid(),
+});
+
 export const convertSchema = z.object({
   package_id: z.string().uuid().or(z.literal("")).default(""),
   wedding_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "err_date"),
@@ -124,6 +183,7 @@ export const weddingSchema = z.object({
   venue_name: z.string().trim().default(""),
   city: z.string().trim().default(""),
   governorate: z.enum(GOVERNORATES).or(z.literal("")).default(""),
+  location_url: optionalUrl,
   status: z.enum(WEDDING_STATUSES),
   total: money,
   day_plan: z.string().trim().default(""),
@@ -143,6 +203,32 @@ export const markPaidSchema = z.object({
   id: z.string().uuid(),
   paid_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "err_paid_date"),
   method: z.enum(PAYMENT_METHODS),
+});
+
+const contractText = (max: number) => z.string().trim().max(max, "err_form").default("");
+
+export const contractSchema = z.object({
+  wedding_id: z.string().uuid("err_form"),
+  client_names: contractText(200),
+  contact: contractText(200),
+  address: contractText(240),
+  event_date: contractText(80),
+  places: contractText(400),
+  start_time: contractText(20),
+  end_time: contractText(20),
+  preparations: contractText(400),
+  pack: z
+    .string()
+    .trim()
+    .default("")
+    .refine((value) => value === "" || value === "1" || value === "2" || value === "3", "err_form"),
+  extras: contractText(500),
+  total: contractText(40),
+  deposit: contractText(40),
+  balance: contractText(40),
+  signed_place: contractText(80),
+  signed_day: contractText(2),
+  signed_month: contractText(2),
 });
 
 export const invoiceSchema = z.object({

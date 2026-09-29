@@ -4,7 +4,15 @@ import { formatTnd } from "@/lib/money";
 
 type Month = { key: string; label: string; earnings: number; expenses: number; selected?: boolean };
 
-export function EarningsChart({ months, copy }: { months: Month[]; copy: Messages["chart"] }) {
+export function EarningsChart({
+  months,
+  copy,
+  hrefFor,
+}: {
+  months: Month[];
+  copy: Messages["chart"];
+  hrefFor: (key: string) => string;
+}) {
   const max = Math.max(1, ...months.flatMap((month) => [month.earnings, month.expenses]));
   const width = 720;
   const height = 180;
@@ -14,7 +22,7 @@ export function EarningsChart({ months, copy }: { months: Month[]; copy: Message
   const expenses = months.reduce((sum, month) => sum + month.expenses, 0);
 
   return (
-    <Card className="mb-6 p-5">
+    <Card className="mb-6 p-6">
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h2 className="text-sm font-semibold">{copy.title}</h2>
@@ -39,24 +47,27 @@ export function EarningsChart({ months, copy }: { months: Month[]; copy: Message
           </div>
         </dl>
       </div>
-      <svg viewBox={`0 0 ${width} ${height + 24}`} className="w-full" role="img" aria-label={copy.aria}>
+      <svg viewBox={`0 0 ${width} ${height + 24}`} className="w-full font-sans" role="img" aria-label={copy.aria}>
         {[0.25, 0.5, 0.75, 1].map((step) => (
-          <line key={step} x1={0} x2={width} y1={height - height * step} y2={height - height * step} stroke="#efebe6" />
+          <line key={step} x1={0} x2={width} y1={height - height * step} y2={height - height * step} stroke="#ededed" />
         ))}
         {months.map((month, index) => {
           const x = pad + index * group;
           const earnH = (month.earnings / max) * height;
           const spendH = (month.expenses / max) * height;
           const tip = fill(copy.tip, { label: month.label, earned: formatTnd(month.earnings), spent: formatTnd(month.expenses) });
+          const showLabel = months.length <= 16 || month.selected || index % 2 === 0 || index === months.length - 1;
           return (
-            <a key={month.key} href={`/?month=${month.key}`} aria-label={tip} aria-current={month.selected ? "true" : undefined}>
-              <rect x={x} y={0} width={group} height={height + 22} fill={month.selected ? "#f4ede3" : "transparent"} />
+            <a key={month.key} href={hrefFor(month.key)} aria-label={tip} aria-current={month.selected ? "true" : undefined}>
+              <rect x={x} y={0} width={group} height={height + 22} fill={month.selected ? "#e7ffe9" : "transparent"} />
               <title>{tip}</title>
-              <rect x={x + group * 0.16} y={height - earnH} width={group * 0.32} height={earnH} rx={3} fill="#1c1917" />
-              <rect x={x + group * 0.52} y={height - spendH} width={group * 0.32} height={spendH} rx={3} fill="#8c6a3d" />
-              <text x={x + group / 2} y={height + 18} textAnchor="middle" fontSize="11" fill={month.selected ? "#1c1917" : "#78716c"} fontWeight={month.selected ? 600 : 400}>
-                {month.label}
-              </text>
+              <rect x={x + group * 0.16} y={height - earnH} width={group * 0.32} height={earnH} rx={4} fill="#000000" />
+              <rect x={x + group * 0.52} y={height - spendH} width={group * 0.32} height={spendH} rx={4} fill="#76fb91" />
+              {showLabel ? (
+                <text x={x + group / 2} y={height + 18} textAnchor="middle" fontSize={months.length > 16 ? 9 : 11} fill={month.selected ? "#000000" : "#6b6b6b"} fontWeight={month.selected ? 600 : 400}>
+                  {month.label}
+                </text>
+              ) : null}
             </a>
           );
         })}

@@ -3,6 +3,16 @@ import { PAGE_SIZE } from "@/lib/constants";
 import { fill, getMessages, term, translateFlash } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
 
+export function LogoMark({ className = "h-9 w-9" }: { className?: string }) {
+  return (
+    <span className={`inline-flex shrink-0 items-center justify-center rounded-2xl bg-accent text-ink ${className}`} aria-hidden>
+      <svg viewBox="0 0 24 24" className="h-[58%] w-[58%]" fill="currentColor">
+        <path d="M12 1.5l2.1 8.4L22.5 12l-8.4 2.1L12 22.5l-2.1-8.4L1.5 12l8.4-2.1z" />
+      </svg>
+    </span>
+  );
+}
+
 export function PageHeader({
   title,
   subtitle,
@@ -23,7 +33,7 @@ export function PageHeader({
       ) : null}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-display text-3xl font-medium tracking-tight">{title}</h1>
+          <h1 className="font-display text-4xl font-semibold tracking-tight">{title}</h1>
           {subtitle ? <div className="mt-1.5 text-sm text-muted">{subtitle}</div> : null}
         </div>
         {action}
@@ -39,8 +49,8 @@ export async function Banner({ error, notice }: { error?: string; notice?: strin
   return (
     <p
       role={error ? "alert" : "status"}
-      className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
-        error ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"
+      className={`mb-6 rounded-2xl px-4 py-3 text-sm ${
+        error ? "bg-red-50 text-red-800" : "bg-accent-soft text-ink"
       }`}
     >
       {text}
@@ -66,7 +76,7 @@ export function Field({
 }
 
 export function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={`rounded-xl border border-line bg-surface ${className}`}>{children}</div>;
+  return <div className={`rounded-[1.5rem] bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.04)] ${className}`}>{children}</div>;
 }
 
 export function Section({
@@ -81,7 +91,7 @@ export function Section({
   className?: string;
 }) {
   return (
-    <Card className={`p-5 ${className}`}>
+    <Card className={`p-6 ${className}`}>
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold">{title}</h2>
         {action}
@@ -109,7 +119,7 @@ export function Disclosure({
   children: React.ReactNode;
 }) {
   return (
-    <details open={open} className="group mb-6 rounded-xl border border-line bg-surface">
+    <details open={open} className="group mb-6 rounded-[1.5rem] bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
       <summary className="flex items-center justify-between px-5 py-3.5 text-sm font-medium">
         <span>{label}</span>
         <span className="text-muted transition-transform group-open:rotate-45" aria-hidden>
@@ -135,24 +145,48 @@ export function EmptyRow({ colSpan, children }: { colSpan: number; children: Rea
   );
 }
 
+const METER = {
+  ink: "bg-ink",
+  accent: "bg-accent",
+  mid: "bg-track-mid",
+} as const;
+
+export function Meter({ segments }: { segments: { value: number; tone: keyof typeof METER }[] }) {
+  const total = segments.reduce((sum, segment) => sum + Math.max(0, segment.value), 0);
+  return (
+    <div className="flex h-2.5 overflow-hidden rounded-full bg-track">
+      {total === 0
+        ? null
+        : segments.map((segment, index) =>
+            segment.value > 0 ? (
+              <div key={index} className={METER[segment.tone]} style={{ width: `${(segment.value / total) * 100}%` }} />
+            ) : null,
+          )}
+    </div>
+  );
+}
+
 export function StatCard({
   label,
   value,
   hint,
   href,
   tone = "default",
+  footer,
 }: {
   label: string;
   value: React.ReactNode;
   hint?: string;
   href?: string;
   tone?: "default" | "warn";
+  footer?: React.ReactNode;
 }) {
   const body = (
-    <Card className="h-full p-5 transition-colors hover:border-stone-300">
-      <p className="text-xs font-medium tracking-wide text-muted uppercase">{label}</p>
-      <p className={`mt-2 font-display text-2xl ${tone === "warn" ? "text-red-700" : ""}`}>{value}</p>
-      {hint ? <p className="mt-1 text-xs text-muted">{hint}</p> : null}
+    <Card className="h-full p-6 transition-shadow hover:shadow-[0_12px_32px_rgba(0,0,0,0.06)]">
+      <p className="text-sm text-muted">{label}</p>
+      <p className={`mt-3 font-display text-3xl leading-none font-semibold tracking-tight sm:text-4xl ${tone === "warn" ? "text-red-700" : ""}`}>{value}</p>
+      {hint ? <p className="mt-2 text-xs text-muted">{hint}</p> : null}
+      {footer}
     </Card>
   );
   return href ? (
@@ -165,39 +199,41 @@ export function StatCard({
 }
 
 const TONES = {
-  gray: "bg-stone-100 text-stone-700 ring-stone-200",
-  blue: "bg-sky-50 text-sky-800 ring-sky-200",
-  amber: "bg-amber-50 text-amber-800 ring-amber-200",
-  violet: "bg-violet-50 text-violet-800 ring-violet-200",
-  green: "bg-emerald-50 text-emerald-800 ring-emerald-200",
-  red: "bg-red-50 text-red-800 ring-red-200",
+  gray: "bg-neutral-200 text-neutral-800",
+  blue: "bg-sky-100 text-sky-900",
+  amber: "bg-amber-100 text-amber-950",
+  orange: "bg-orange-100 text-orange-950",
+  violet: "bg-violet-100 text-violet-950",
+  green: "bg-accent text-ink",
+  teal: "bg-teal-100 text-teal-950",
+  red: "bg-red-100 text-red-800",
 } as const;
 
 type Tone = keyof typeof TONES;
 
 const STATUS_TONES: Record<string, Tone> = {
   new: "blue",
-  contacted: "amber",
+  contacted: "orange",
   quote_sent: "violet",
-  booked: "green",
+  booked: "teal",
   lost: "gray",
   reserved: "amber",
-  confirmed: "blue",
-  shot: "violet",
+  confirmed: "green",
+  shot: "blue",
   editing: "violet",
-  delivered: "green",
-  cancelled: "gray",
+  delivered: "teal",
+  cancelled: "red",
   todo: "gray",
-  doing: "amber",
+  doing: "orange",
   done: "green",
   paid: "green",
   overdue: "red",
-  due: "gray",
+  due: "amber",
 };
 
 export function Badge({ tone = "gray", children }: { tone?: Tone; children: React.ReactNode }) {
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ring-1 ring-inset ${TONES[tone]}`}>
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${TONES[tone]}`}>
       {children}
     </span>
   );
@@ -255,13 +291,13 @@ export function FilterTabs({
   active: string;
 }) {
   return (
-    <div className="mb-4 flex gap-1 overflow-x-auto rounded-lg border border-line bg-surface p-1 text-sm">
+    <div className="mb-5 flex gap-1 overflow-x-auto text-sm">
       {items.map((item) => (
         <Link
           key={item.value}
           href={item.href}
-          className={`rounded-md px-3 py-1.5 whitespace-nowrap no-underline ${
-            item.value === active ? "bg-ink text-white" : "text-muted hover:bg-canvas hover:text-ink"
+          className={`rounded-full px-4 py-2 whitespace-nowrap no-underline ${
+            item.value === active ? "bg-ink font-medium text-white" : "text-muted hover:bg-surface hover:text-ink"
           }`}
         >
           {item.label}

@@ -20,7 +20,7 @@ export default function StudioError({
 
   return (
     <div className="mx-auto max-w-md py-16 text-center">
-      <p className="font-display text-3xl">{messages.errors.title}</p>
+      <p className="font-display text-3xl font-semibold tracking-tight">{messages.errors.title}</p>
       <p className="mt-3 text-sm text-muted">
         {messages.errors.body}
         {error.digest ? <span className="mt-1 block text-xs">{fill(messages.errors.reference, { digest: error.digest })}</span> : null}

@@ -50,18 +50,45 @@ export default async function CalendarPage({
     const ids = (assigned ?? []).map((row) => row.wedding_id);
     query = query.in("id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]);
   }
-  const { data } = await query;
+  let extraQuery = supabase
+    .from("wedding_days")
+    .select("wedding_id, day_date, start_time, label, weddings(status, venue_name, clients(partner_one_name, partner_two_name))")
+    .gte("day_date", start)
+    .lt("day_date", end);
+  if (!admin) {
+    const { data: assigned } = await supabase.from("wedding_assignments").select("wedding_id").eq("member_id", profile.id);
+    const ids = (assigned ?? []).map((row) => row.wedding_id);
+    extraQuery = extraQuery.in("wedding_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]);
+  }
+  const [{ data }, { data: extraDays }] = await Promise.all([query, extraQuery]);
   const byDay = new Map<number, { id: string; name: string; time: string | null }[]>();
-  for (const wedding of data ?? []) {
-    const day = Number(String(wedding.wedding_date).slice(8, 10));
-    const client = one(wedding.clients);
+  const monthIds = new Set<string>();
+  function addToDay(date: string, item: { id: string; name: string; time: string | null }) {
+    const day = Number(String(date).slice(8, 10));
     const list = byDay.get(day) ?? [];
-    list.push({
+    if (list.some((existing) => existing.id === item.id)) return;
+    list.push(item);
+    byDay.set(day, list);
+    monthIds.add(item.id);
+  }
+  for (const wedding of data ?? []) {
+    const client = one(wedding.clients);
+    addToDay(String(wedding.wedding_date), {
       id: wedding.id,
       name: client ? client.partner_one_name : wedding.venue_name || messages.common.wedding,
       time: wedding.start_time ? wedding.start_time.slice(0, 5) : null,
     });
-    byDay.set(day, list);
+  }
+  for (const extra of extraDays ?? []) {
+    const wedding = one(extra.weddings);
+    if (!wedding || wedding.status === "cancelled") continue;
+    const client = one(wedding.clients);
+    const name = client ? client.partner_one_name : wedding.venue_name || messages.common.wedding;
+    addToDay(String(extra.day_date), {
+      id: extra.wedding_id,
+      name: extra.label ? `${name} · ${extra.label}` : name,
+      time: extra.start_time ? extra.start_time.slice(0, 5) : null,
+    });
   }
   const leadingBlanks = (new Date(Date.UTC(year, monthNumber - 1, 1)).getUTCDay() + 6) % 7;
   const todayDay = today.slice(0, 7) === `${yearText}-${monthText}` ? Number(today.slice(8, 10)) : null;
@@ -74,7 +101,7 @@ export default async function CalendarPage({
       <PageHeader
         title={title}
         subtitle={fill(messages.calendar.subtitle, {
-          count: fill((data ?? []).length === 1 ? messages.common.weddingOne : messages.common.weddingMany, { count: (data ?? []).length }),
+          count: fill(monthIds.size === 1 ? messages.common.weddingOne : messages.common.weddingMany, { count: monthIds.size }),
         })}
         action={
           <div className="flex flex-wrap items-center gap-2">
@@ -117,7 +144,7 @@ export default async function CalendarPage({
         <div className="overflow-x-auto">
           <div className="grid min-w-[640px] grid-cols-7 gap-px bg-line text-sm">
             {weekdays.map((day) => (
-              <div key={day} className="bg-[#faf9f7] px-3 py-2 text-xs font-medium tracking-wide text-muted uppercase">
+              <div key={day} className="bg-canvas px-3 py-2 text-xs font-medium tracking-wide text-muted uppercase">
                 {day}
               </div>
             ))}
@@ -156,7 +183,7 @@ export default async function CalendarPage({
                     <Link
                       key={item.id}
                       href={`/weddings/${item.id}`}
-                      className="mt-1 block truncate rounded-md bg-accent-soft px-2 py-1 text-xs text-accent no-underline hover:bg-[#ece2d3]"
+                      className="mt-1 block truncate rounded-lg bg-accent-soft px-2 py-1 text-xs text-ink no-underline hover:bg-accent"
                     >
                       {item.time ? <span className="font-semibold">{item.time} </span> : null}
                       {item.name}

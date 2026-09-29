@@ -1,5 +1,5 @@
 import { LanguageSwitcher, SubmitButton } from "@/components/client";
-import { Banner, Card, Field } from "@/components/ui";
+import { Banner, Card, Field, LogoMark } from "@/components/ui";
 import { signIn } from "@/lib/actions";
 import { supabaseConfigured } from "@/lib/auth";
 import { getMessages } from "@/lib/i18n";
@@ -24,8 +24,9 @@ export default async function LoginPage({
         <LanguageSwitcher locale={locale} label={messages.ui.language} />
       </div>
       <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <p className="font-display text-3xl">Yesser</p>
+        <div className="mb-8 flex flex-col items-center text-center">
+          <LogoMark className="h-14 w-14 rounded-[1.25rem]" />
+          <p className="mt-4 font-display text-3xl font-semibold tracking-tight">Yesser</p>
           <p className="mt-1 text-xs tracking-[0.18em] text-muted uppercase">{messages.brandTagline}</p>
         </div>
         <Card className="p-6">

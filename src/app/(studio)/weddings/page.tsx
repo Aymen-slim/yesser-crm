@@ -56,6 +56,25 @@ export default async function WeddingsPage({
     admin ? supabase.from("clients").select("id, partner_one_name, partner_two_name").order("partner_one_name") : Promise.resolve({ data: [] }),
     admin ? supabase.from("packages").select("id, name").eq("active", true).order("name") : Promise.resolve({ data: [] }),
   ]);
+  const weddingIds = (list.data ?? []).map((wedding) => wedding.id);
+  const [extraDays, extraPlaces] = weddingIds.length
+    ? await Promise.all([
+        supabase.from("wedding_days").select("wedding_id, day_date, label").in("wedding_id", weddingIds).order("day_date"),
+        supabase.from("wedding_locations").select("wedding_id, label, venue_name, city").in("wedding_id", weddingIds).order("created_at"),
+      ])
+    : [{ data: [] }, { data: [] }];
+  const daysByWedding = new Map<string, { day_date: string; label: string }[]>();
+  for (const day of extraDays.data ?? []) {
+    const rows = daysByWedding.get(day.wedding_id) ?? [];
+    rows.push({ day_date: day.day_date, label: day.label });
+    daysByWedding.set(day.wedding_id, rows);
+  }
+  const placesByWedding = new Map<string, { label: string; venue_name: string; city: string }[]>();
+  for (const spot of extraPlaces.data ?? []) {
+    const rows = placesByWedding.get(spot.wedding_id) ?? [];
+    rows.push({ label: spot.label, venue_name: spot.venue_name, city: spot.city });
+    placesByWedding.set(spot.wedding_id, rows);
+  }
 
   return (
     <div>
@@ -98,8 +117,21 @@ export default async function WeddingsPage({
                   <td className="whitespace-nowrap">
                     {formatDate(wedding.wedding_date, locale)}
                     {wedding.start_time ? <span className="block text-xs text-muted">{wedding.start_time.slice(0, 5)}</span> : null}
+                    {(daysByWedding.get(wedding.id) ?? []).map((day) => (
+                      <span key={day.day_date} className="block text-xs text-muted">
+                        {formatDate(day.day_date, locale)}
+                        {day.label ? ` · ${day.label}` : ""}
+                      </span>
+                    ))}
                   </td>
-                  <td>{[wedding.venue_name, wedding.city].filter(Boolean).join(", ") || "—"}</td>
+                  <td>
+                    {[wedding.venue_name, wedding.city].filter(Boolean).join(", ") || "—"}
+                    {(placesByWedding.get(wedding.id) ?? []).map((spot, index) => (
+                      <span key={`${spot.label}-${index}`} className="block text-xs text-muted">
+                        {[spot.label, spot.venue_name, spot.city].filter(Boolean).join(", ")}
+                      </span>
+                    ))}
+                  </td>
                   <td className="text-muted">{pack?.name ?? "—"}</td>
                   <td>
                     <StatusBadge status={wedding.status} />

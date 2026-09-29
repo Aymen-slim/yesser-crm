@@ -1,10 +1,13 @@
 import {
+  addWeddingDay,
+  addWeddingPlace,
   assignMember,
   convertLead,
   markPaymentPaid,
   quickBook,
   saveClient,
   saveExpense,
+  saveExtra,
   saveInvoice,
   saveLead,
   saveNote,
@@ -23,7 +26,7 @@ import {
   WEDDING_STATUSES,
   todayInTunis,
 } from "@/lib/constants";
-import { SubmitButton } from "@/components/client";
+import { LineList, SubmitButton } from "@/components/client";
 import { Field } from "@/components/ui";
 import { fill, getMessages, term, type Messages } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
@@ -284,6 +287,7 @@ export async function PackageForm({
     includes_video: boolean;
     includes_drone: boolean;
     active: boolean;
+    features?: string[];
   };
 }) {
   const messages = await copy();
@@ -297,24 +301,127 @@ export async function PackageForm({
       <Field label={f.price}>
         <input name="price" inputMode="decimal" placeholder="0.000" defaultValue={item ? (item.price_millimes / 1000).toFixed(3) : ""} required />
       </Field>
-      <Field label={f.coverageHours}>
-        <input name="coverage_hours" type="number" min="0" step="0.5" defaultValue={item?.coverage_hours ?? 8} />
-      </Field>
-      <Field label={f.photoCount}>
-        <input name="photo_count" type="number" min="0" defaultValue={item?.photo_count ?? 0} />
-      </Field>
-      <Field label={f.description} wide>
-        <textarea name="description" rows={3} defaultValue={item?.description} />
-      </Field>
-      <fieldset className="flex flex-wrap gap-x-6 gap-y-2 text-sm md:col-span-2">
-        <legend className="mb-2 font-medium text-muted">{f.includes}</legend>
-        <label className="flex items-center gap-2"><input type="checkbox" name="includes_album" defaultChecked={item?.includes_album} /> {messages.terms.album}</label>
-        <label className="flex items-center gap-2"><input type="checkbox" name="includes_video" defaultChecked={item?.includes_video} /> {messages.terms.video}</label>
-        <label className="flex items-center gap-2"><input type="checkbox" name="includes_drone" defaultChecked={item?.includes_drone} /> {messages.terms.drone}</label>
-        <label className="flex items-center gap-2"><input type="checkbox" name="active" defaultChecked={item?.active ?? true} /> {f.offered}</label>
-      </fieldset>
+      <div className="md:col-span-2">
+        <p className="text-sm font-medium text-muted">{messages.packages.included}</p>
+        <p className="mt-1 mb-3 text-xs text-muted">{messages.packages.includedHint}</p>
+        <LineList
+          name="feature"
+          lines={item?.features ?? []}
+          addLabel={messages.packages.addLine}
+          placeholder={messages.packages.featurePlaceholder}
+          removeLabel={messages.common.remove}
+        />
+      </div>
+      <label className="flex items-center gap-2 text-sm md:col-span-2">
+        <input type="checkbox" name="active" defaultChecked={item?.active ?? true} /> {f.offered}
+      </label>
+      <details className="group rounded-2xl border border-line md:col-span-2">
+        <summary className="flex cursor-pointer items-center justify-between px-4 py-3 text-sm font-medium">
+          <span>{messages.packages.moreDetails}</span>
+          <span className="text-muted transition-transform group-open:rotate-45" aria-hidden>
+            +
+          </span>
+        </summary>
+        <div className="grid gap-4 border-t border-line px-4 py-4 md:grid-cols-2">
+          <Field label={f.coverageHours}>
+            <input name="coverage_hours" type="number" min="0" step="0.5" defaultValue={item?.coverage_hours ?? 8} />
+          </Field>
+          <Field label={f.photoCount}>
+            <input name="photo_count" type="number" min="0" defaultValue={item?.photo_count ?? 0} />
+          </Field>
+          <Field label={f.description} wide>
+            <textarea name="description" rows={3} defaultValue={item?.description} />
+          </Field>
+          <fieldset className="flex flex-wrap gap-x-6 gap-y-2 text-sm md:col-span-2">
+            <legend className="mb-2 font-medium text-muted">{f.includes}</legend>
+            <label className="flex items-center gap-2"><input type="checkbox" name="includes_album" defaultChecked={item?.includes_album} /> {messages.terms.album}</label>
+            <label className="flex items-center gap-2"><input type="checkbox" name="includes_video" defaultChecked={item?.includes_video} /> {messages.terms.video}</label>
+            <label className="flex items-center gap-2"><input type="checkbox" name="includes_drone" defaultChecked={item?.includes_drone} /> {messages.terms.drone}</label>
+          </fieldset>
+        </div>
+      </details>
       <FormActions>
         <SubmitButton pendingLabel={messages.common.saving}>{item ? f.savePackage : f.addPackage}</SubmitButton>
+      </FormActions>
+    </form>
+  );
+}
+
+export async function ExtraForm({
+  item,
+}: {
+  item?: {
+    id: string;
+    name: string;
+    price_millimes: number;
+    active: boolean;
+  };
+}) {
+  const messages = await copy();
+  const f = messages.forms;
+  return (
+    <form action={saveExtra} className={item ? "grid gap-4 sm:grid-cols-[1fr_9rem_auto] sm:items-end" : formGrid}>
+      {item ? <input type="hidden" name="id" value={item.id} className="hidden" /> : null}
+      <Field label={f.name}>
+        <input name="name" defaultValue={item?.name} required />
+      </Field>
+      <Field label={f.price}>
+        <input name="price" inputMode="decimal" placeholder="0.000" defaultValue={item ? (item.price_millimes / 1000).toFixed(3) : ""} required />
+      </Field>
+      <label className={`flex items-center gap-2 text-sm ${item ? "pb-3" : ""}`}>
+        <input type="checkbox" name="active" defaultChecked={item?.active ?? true} />
+        {messages.packages.extraOffered}
+      </label>
+      <FormActions>
+        <SubmitButton pendingLabel={messages.common.saving}>{item ? messages.common.save : f.addExtra}</SubmitButton>
+      </FormActions>
+    </form>
+  );
+}
+
+export async function WeddingDayForm({ weddingId }: { weddingId: string }) {
+  const messages = await copy();
+  const f = messages.forms;
+  return (
+    <form action={addWeddingDay} className={`${formGrid} pb-0`}>
+      <input type="hidden" name="wedding_id" value={weddingId} />
+      <Field label={f.date}>
+        <input name="day_date" type="date" required />
+      </Field>
+      <Field label={f.start}>
+        <input name="start_time" type="time" />
+      </Field>
+      <Field label={messages.weddings.dayLabel} wide>
+        <input name="label" placeholder={messages.weddings.dayLabelHint} maxLength={80} />
+      </Field>
+      <FormActions>
+        <SubmitButton pendingLabel={messages.common.saving}>{messages.weddings.addDay}</SubmitButton>
+        <BookAnyway />
+      </FormActions>
+    </form>
+  );
+}
+
+export async function WeddingPlaceForm({ weddingId }: { weddingId: string }) {
+  const messages = await copy();
+  const f = messages.forms;
+  return (
+    <form action={addWeddingPlace} className={`${formGrid} pb-0`}>
+      <input type="hidden" name="wedding_id" value={weddingId} />
+      <Field label={messages.weddings.placeLabel}>
+        <input name="label" placeholder={messages.weddings.placeLabelHint} maxLength={80} />
+      </Field>
+      <Field label={f.venue}>
+        <input name="venue_name" maxLength={120} />
+      </Field>
+      <Field label={f.city}>
+        <input name="city" maxLength={80} />
+      </Field>
+      <Field label={f.locationLink} wide>
+        <input name="location_url" type="url" inputMode="url" placeholder="https://maps.google.com/..." />
+      </Field>
+      <FormActions>
+        <SubmitButton pendingLabel={messages.common.saving}>{messages.weddings.addPlace}</SubmitButton>
       </FormActions>
     </form>
   );
@@ -324,6 +431,7 @@ export async function WeddingForm({
   wedding,
   clients,
   packages,
+  lockTotal = false,
 }: {
   wedding?: {
     id: string;
@@ -334,12 +442,14 @@ export async function WeddingForm({
     venue_name: string;
     city: string;
     governorate: string;
+    location_url?: string;
     status: string;
     total_millimes: number;
     day_plan: string;
   };
   clients: { id: string; partner_one_name: string; partner_two_name: string }[];
   packages: { id: string; name: string }[];
+  lockTotal?: boolean;
 }) {
   const messages = await copy();
   const f = messages.forms;
@@ -389,14 +499,22 @@ export async function WeddingForm({
           ))}
         </select>
       </Field>
+      <Field label={f.locationLink} wide>
+        <input name="location_url" type="url" inputMode="url" placeholder="https://maps.google.com/..." defaultValue={wedding?.location_url ?? ""} />
+      </Field>
       <Field label={f.status}>
         <select name="status" defaultValue={wedding?.status ?? "reserved"}>
           <Options values={WEDDING_STATUSES} messages={messages} />
         </select>
       </Field>
-      <Field label={f.agreedTotal}>
-        <input name="total" inputMode="decimal" defaultValue={wedding ? (wedding.total_millimes / 1000).toFixed(3) : "0.000"} required />
-      </Field>
+      {lockTotal ? (
+        <input type="hidden" name="total" value={wedding ? (wedding.total_millimes / 1000).toFixed(3) : "0.000"} />
+      ) : (
+        <Field label={f.agreedTotal}>
+          <input name="total" inputMode="decimal" defaultValue={wedding ? (wedding.total_millimes / 1000).toFixed(3) : "0.000"} required />
+          <span className="text-xs text-muted">{f.totalHint}</span>
+        </Field>
+      )}
       <Field label={f.dayPlan} wide>
         <textarea name="day_plan" rows={4} defaultValue={wedding?.day_plan} />
       </Field>
@@ -592,25 +710,34 @@ export async function ExpenseForm({ weddings }: { weddings: { id: string; label:
 export async function TaskForm({
   weddingId,
   members,
+  lockedAssignee,
 }: {
   weddingId: string;
   members: { id: string; full_name: string }[];
+  lockedAssignee?: string;
 }) {
   const messages = await copy();
   const f = messages.forms;
   return (
-    <form action={saveTask} className="mt-4 grid gap-2 border-t border-line pt-4 sm:grid-cols-[1fr_auto_auto_auto]">
+    <form
+      action={saveTask}
+      className={`mt-4 grid gap-2 border-t border-line pt-4 ${lockedAssignee ? "sm:grid-cols-[1fr_auto_auto]" : "sm:grid-cols-[1fr_auto_auto_auto]"}`}
+    >
       <input type="hidden" name="wedding_id" value={weddingId} />
       <input name="title" placeholder={f.newTask} aria-label={f.task} required />
       <input name="due_date" type="date" aria-label={f.dueDate} />
-      <select name="assignee_id" defaultValue="" aria-label={f.assignee}>
-        <option value="">{f.unassigned}</option>
-        {members.map((member) => (
-          <option key={member.id} value={member.id}>
-            {member.full_name}
-          </option>
-        ))}
-      </select>
+      {lockedAssignee ? (
+        <input type="hidden" name="assignee_id" value={lockedAssignee} />
+      ) : (
+        <select name="assignee_id" defaultValue="" aria-label={f.assignee}>
+          <option value="">{f.unassigned}</option>
+          {members.map((member) => (
+            <option key={member.id} value={member.id}>
+              {member.full_name}
+            </option>
+          ))}
+        </select>
+      )}
       <SubmitButton pendingLabel={messages.common.adding}>{messages.common.add}</SubmitButton>
     </form>
   );

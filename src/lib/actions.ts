@@ -14,17 +14,26 @@ import {
   clientSchema,
   convertSchema,
   expenseSchema,
+  extraSchema,
   leadSchema,
   loginSchema,
   markPaidSchema,
   memberSchema,
   memberUpdateSchema,
   noteSchema,
+  offerSchema,
   packageSchema,
   paymentSchema,
+  contractSchema,
   invoiceSchema,
   quickBookSchema,
   taskSchema,
+  weddingChildSchema,
+  weddingDaySchema,
+  weddingExtraPriceSchema,
+  weddingExtraSchema,
+  weddingFeaturesSchema,
+  weddingPlaceSchema,
   weddingSchema,
   parseForm,
 } from "@/lib/validators";
@@ -62,19 +71,80 @@ function emptyToNull(value: string | undefined | null) {
   return value ? value : null;
 }
 
+function asFeatures(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 40);
+}
+
+function featureLines(formData: FormData) {
+  const lines = formData
+    .getAll("feature")
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (lines.length > 40 || lines.some((line) => line.length > 160)) return "err_features" as const;
+  return lines;
+}
+
 async function dateTaken(supabase: Supabase, date: string, excludeId?: string) {
-  let query = supabase
+  let main = supabase
     .from("weddings")
     .select("id", { count: "exact", head: true })
     .eq("wedding_date", date)
     .neq("status", "cancelled");
-  if (excludeId) query = query.neq("id", excludeId);
-  const { count } = await query;
-  return (count ?? 0) > 0;
+  if (excludeId) main = main.neq("id", excludeId);
+  const { count } = await main;
+  if ((count ?? 0) > 0) return true;
+
+  let extra = supabase.from("wedding_days").select("wedding_id").eq("day_date", date);
+  if (excludeId) extra = extra.neq("wedding_id", excludeId);
+  const { data } = await extra;
+  const ids = [...new Set((data ?? []).map((row) => row.wedding_id))];
+  if (ids.length === 0) return false;
+  const { count: extraCount } = await supabase
+    .from("weddings")
+    .select("id", { count: "exact", head: true })
+    .in("id", ids)
+    .neq("status", "cancelled");
+  return (extraCount ?? 0) > 0;
 }
 
 function doubleBookingMessage(date: string) {
   return `date_taken:${date}`;
+}
+
+function revalidateWeddingMoney(weddingId: string) {
+  revalidatePath(`/weddings/${weddingId}`);
+  revalidatePath(`/weddings/${weddingId}/contract`);
+  revalidatePath("/weddings");
+  revalidatePath("/payments");
+  revalidatePath("/");
+}
+
+async function writeOfferTotal(supabase: Supabase, weddingId: string, ownedBefore: boolean) {
+  const { data: wedding, error: weddingError } = await supabase
+    .from("weddings")
+    .select("package_price_millimes")
+    .eq("id", weddingId)
+    .maybeSingle();
+  if (weddingError || !wedding) return false;
+  const { data: lines, error: linesError } = await supabase
+    .from("wedding_extras")
+    .select("price_millimes")
+    .eq("wedding_id", weddingId);
+  if (linesError) return false;
+  const extras = lines ?? [];
+  const owned = wedding.package_price_millimes != null || extras.length > 0;
+  if (!owned && !ownedBefore) return true;
+  const total = owned
+    ? (wedding.package_price_millimes ?? 0) + extras.reduce((sum, line) => sum + line.price_millimes, 0)
+    : 0;
+  const { error } = await supabase.from("weddings").update({ total_millimes: total }).eq("id", weddingId);
+  return !error;
 }
 
 export async function signIn(formData: FormData) {
@@ -161,6 +231,12 @@ export async function convertLead(formData: FormData) {
   });
   if (error || !weddingId) fail(back, "book_lead_failed");
 
+  const packageId = emptyToNull(parsed.data.package_id);
+  if (packageId) {
+    const { data: pack } = await supabase.from("packages").select("features").eq("id", packageId).maybeSingle();
+    if (pack) await supabase.from("weddings").update({ features: asFeatures(pack.features) }).eq("id", weddingId);
+  }
+
   revalidatePath("/clients");
   revalidatePath("/weddings");
   revalidatePath("/");
@@ -186,8 +262,37 @@ export async function saveClient(formData: FormData) {
     : await supabase.from("clients").insert(row);
   if (error) fail(back, "save_couple_failed");
   revalidatePath("/clients");
-  if (id) revalidatePath(back);
+  if (id) {
+    revalidatePath(back);
+    const { data: weddings } = await supabase.from("weddings").select("id").eq("client_id", id);
+    for (const wedding of weddings ?? []) revalidatePath(`/weddings/${wedding.id}/contract`);
+  }
   done(back, id ? "couple_saved" : "couple_added");
+}
+
+export async function deleteClient(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const back = `/clients/${id}`;
+  const supabase = await createClient();
+  const { data: weddings } = await supabase.from("weddings").select("id").eq("client_id", id);
+  const weddingIds = (weddings ?? []).map((wedding) => wedding.id);
+  if (weddingIds.length > 0) {
+    const { data: files } = await supabase.from("files").select("storage_path").in("wedding_id", weddingIds);
+    const paths = (files ?? []).map((file) => file.storage_path);
+    if (paths.length > 0) {
+      const { error: storageError } = await supabase.storage.from("studio-files").remove(paths);
+      if (storageError) fail(back, "delete_couple_failed");
+    }
+  }
+  const { error } = await supabase.from("clients").delete().eq("id", id);
+  if (error) fail(back, "delete_couple_failed");
+  revalidatePath("/clients");
+  revalidatePath("/weddings");
+  revalidatePath("/calendar");
+  revalidatePath("/payments");
+  revalidatePath("/");
+  done("/clients?tab=booked", "couple_deleted");
 }
 
 export async function savePackage(formData: FormData) {
@@ -196,6 +301,8 @@ export async function savePackage(formData: FormData) {
   const back = id ? `/packages/${id}` : "/packages";
   const parsed = parseForm(packageSchema, formData);
   if ("error" in parsed) fail(back, parsed.error);
+  const features = featureLines(formData);
+  if (features === "err_features") fail(back, "err_features");
   const supabase = await createClient();
   const row = {
     name: parsed.data.name,
@@ -207,6 +314,7 @@ export async function savePackage(formData: FormData) {
     includes_video: parsed.data.includes_video,
     includes_drone: parsed.data.includes_drone,
     active: parsed.data.active,
+    features,
   };
   const { error } = id
     ? await supabase.from("packages").update(row).eq("id", id)
@@ -214,6 +322,331 @@ export async function savePackage(formData: FormData) {
   if (error) fail(back, "save_package_failed");
   revalidatePath("/packages");
   done("/packages", id ? "package_saved" : "package_added");
+}
+
+export async function deletePackage(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const supabase = await createClient();
+  const { error } = await supabase.from("packages").delete().eq("id", id);
+  if (error) fail(`/packages/${id}`, "delete_package_failed");
+  revalidatePath("/packages");
+  revalidatePath("/weddings");
+  done("/packages", "package_deleted");
+}
+
+export async function saveExtra(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const parsed = parseForm(extraSchema, formData);
+  if ("error" in parsed) fail("/packages", parsed.error);
+  const supabase = await createClient();
+  const row = {
+    name: parsed.data.name,
+    price_millimes: parsed.data.price,
+    active: parsed.data.active,
+  };
+  const { error } = id
+    ? await supabase.from("extras").update(row).eq("id", id)
+    : await supabase.from("extras").insert(row);
+  if (error) fail("/packages", "save_extra_failed");
+  revalidatePath("/packages");
+  revalidatePath("/weddings");
+  done("/packages", id ? "extra_saved" : "extra_added");
+}
+
+export async function deleteExtra(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const supabase = await createClient();
+  const { error } = await supabase.from("extras").delete().eq("id", id);
+  if (error) fail("/packages", "delete_extra_failed");
+  revalidatePath("/packages");
+  revalidatePath("/weddings");
+  done("/packages", "extra_deleted");
+}
+
+export async function saveWeddingOffer(formData: FormData) {
+  await requireAdmin();
+  const weddingId = String(formData.get("wedding_id") ?? "");
+  const back = `/weddings/${weddingId}`;
+  const parsed = parseForm(offerSchema, formData);
+  if ("error" in parsed) fail(back, parsed.error);
+  const supabase = await createClient();
+  const packageId = emptyToNull(parsed.data.package_id);
+  let catalogFeatures: string[] = [];
+  if (packageId) {
+    const { data: pack, error: packError } = await supabase.from("packages").select("id, features").eq("id", packageId).maybeSingle();
+    if (packError || !pack) fail(back, "save_offer_failed");
+    catalogFeatures = asFeatures(pack.features);
+  }
+  const { data: current, error: currentError } = await supabase
+    .from("weddings")
+    .select("package_id, package_price_millimes")
+    .eq("id", parsed.data.wedding_id)
+    .maybeSingle();
+  if (currentError || !current) fail(back, "save_offer_failed");
+  const { count, error: countError } = await supabase
+    .from("wedding_extras")
+    .select("id", { count: "exact", head: true })
+    .eq("wedding_id", parsed.data.wedding_id);
+  if (countError) fail(back, "save_offer_failed");
+  const packageChanged = packageId !== current.package_id;
+  const { error } = await supabase
+    .from("weddings")
+    .update({
+      package_id: packageId,
+      package_price_millimes: packageId ? parsed.data.package_price : null,
+      ...(packageChanged ? { features: packageId ? catalogFeatures : null } : {}),
+    })
+    .eq("id", parsed.data.wedding_id);
+  if (error) fail(back, "save_offer_failed");
+  const priced = await writeOfferTotal(supabase, parsed.data.wedding_id, current.package_price_millimes != null || (count ?? 0) > 0);
+  if (!priced) fail(back, "save_offer_failed");
+  revalidateWeddingMoney(parsed.data.wedding_id);
+  done(back, "offer_saved");
+}
+
+export async function addWeddingExtra(formData: FormData) {
+  await requireAdmin();
+  const weddingId = String(formData.get("wedding_id") ?? "");
+  const back = `/weddings/${weddingId}`;
+  const parsed = parseForm(weddingExtraSchema, formData);
+  if ("error" in parsed) fail(back, parsed.error);
+  const supabase = await createClient();
+  const { data: extra, error: extraError } = await supabase
+    .from("extras")
+    .select("id, name, active")
+    .eq("id", parsed.data.extra_id)
+    .maybeSingle();
+  if (extraError || !extra || !extra.active) fail(back, "add_wedding_extra_failed");
+  const { data: current, error: currentError } = await supabase
+    .from("weddings")
+    .select("package_id, package_price_millimes, total_millimes")
+    .eq("id", parsed.data.wedding_id)
+    .maybeSingle();
+  if (currentError || !current) fail(back, "add_wedding_extra_failed");
+  const { data: existingLines, error: linesError } = await supabase
+    .from("wedding_extras")
+    .select("price_millimes")
+    .eq("wedding_id", parsed.data.wedding_id);
+  if (linesError) fail(back, "add_wedding_extra_failed");
+  const existing = existingLines ?? [];
+  if (current.package_id && current.package_price_millimes == null) {
+    const base = Math.max(0, current.total_millimes - existing.reduce((sum, line) => sum + line.price_millimes, 0));
+    const { error: priceError } = await supabase
+      .from("weddings")
+      .update({ package_price_millimes: base })
+      .eq("id", parsed.data.wedding_id);
+    if (priceError) fail(back, "add_wedding_extra_failed");
+    current.package_price_millimes = base;
+  }
+  const { error } = await supabase.from("wedding_extras").insert({
+    wedding_id: parsed.data.wedding_id,
+    extra_id: extra.id,
+    name: extra.name,
+    price_millimes: parsed.data.price,
+  });
+  if (error) fail(back, "add_wedding_extra_failed");
+  const priced = await writeOfferTotal(supabase, parsed.data.wedding_id, current.package_price_millimes != null || existing.length > 0);
+  if (!priced) fail(back, "add_wedding_extra_failed");
+  revalidateWeddingMoney(parsed.data.wedding_id);
+  done(back, "wedding_extra_added");
+}
+
+export async function updateWeddingExtra(formData: FormData) {
+  await requireAdmin();
+  const weddingId = String(formData.get("wedding_id") ?? "");
+  const back = `/weddings/${weddingId}`;
+  const parsed = parseForm(weddingExtraPriceSchema, formData);
+  if ("error" in parsed) fail(back, parsed.error);
+  const supabase = await createClient();
+  const { data: current, error: currentError } = await supabase
+    .from("weddings")
+    .select("package_price_millimes")
+    .eq("id", parsed.data.wedding_id)
+    .maybeSingle();
+  if (currentError || !current) fail(back, "update_wedding_extra_failed");
+  const { data: updated, error } = await supabase
+    .from("wedding_extras")
+    .update({ price_millimes: parsed.data.price })
+    .eq("id", parsed.data.id)
+    .eq("wedding_id", parsed.data.wedding_id)
+    .select("id");
+  if (error || !updated?.length) fail(back, "update_wedding_extra_failed");
+  const priced = await writeOfferTotal(supabase, parsed.data.wedding_id, true);
+  if (!priced) fail(back, "update_wedding_extra_failed");
+  revalidateWeddingMoney(parsed.data.wedding_id);
+  done(back, "wedding_extra_updated");
+}
+
+export async function removeWeddingExtra(formData: FormData) {
+  await requireAdmin();
+  const weddingId = String(formData.get("wedding_id") ?? "");
+  const id = String(formData.get("id") ?? "");
+  const back = `/weddings/${weddingId}`;
+  if (!id) fail(back, "remove_wedding_extra_failed");
+  const supabase = await createClient();
+  const { data: current, error: currentError } = await supabase
+    .from("weddings")
+    .select("package_price_millimes")
+    .eq("id", weddingId)
+    .maybeSingle();
+  if (currentError || !current) fail(back, "remove_wedding_extra_failed");
+  const { data: removed, error } = await supabase.from("wedding_extras").delete().eq("id", id).eq("wedding_id", weddingId).select("id");
+  if (error || !removed?.length) fail(back, "remove_wedding_extra_failed");
+  const priced = await writeOfferTotal(supabase, weddingId, true);
+  if (!priced) fail(back, "remove_wedding_extra_failed");
+  revalidateWeddingMoney(weddingId);
+  done(back, "wedding_extra_removed");
+}
+
+function touchWedding(weddingId: string) {
+  revalidatePath(`/weddings/${weddingId}`);
+  revalidatePath(`/weddings/${weddingId}/contract`);
+  revalidatePath("/weddings");
+  revalidatePath("/calendar");
+  revalidatePath("/");
+}
+
+export async function addWeddingDay(formData: FormData) {
+  await requireAdmin();
+  const weddingId = String(formData.get("wedding_id") ?? "");
+  const back = `/weddings/${weddingId}`;
+  const parsed = parseForm(weddingDaySchema, formData);
+  if ("error" in parsed) fail(back, parsed.error);
+  const supabase = await createClient();
+  const { data: wedding, error: weddingError } = await supabase
+    .from("weddings")
+    .select("id, wedding_date, status")
+    .eq("id", parsed.data.wedding_id)
+    .maybeSingle();
+  if (weddingError || !wedding) fail(back, "add_day_failed");
+  if (wedding.wedding_date === parsed.data.day_date) fail(back, "day_is_main");
+  const allowDouble = formData.get("allow_double") === "on";
+  if (!allowDouble && wedding.status !== "cancelled" && (await dateTaken(supabase, parsed.data.day_date, wedding.id))) {
+    fail(back, doubleBookingMessage(parsed.data.day_date));
+  }
+  const { error } = await supabase.from("wedding_days").insert({
+    wedding_id: wedding.id,
+    day_date: parsed.data.day_date,
+    start_time: emptyToNull(parsed.data.start_time),
+    label: parsed.data.label,
+  });
+  if (error?.code === "23505") fail(back, "day_exists");
+  if (error) fail(back, "add_day_failed");
+  touchWedding(wedding.id);
+  done(back, "day_added");
+}
+
+export async function removeWeddingDay(formData: FormData) {
+  await requireAdmin();
+  const parsed = parseForm(weddingChildSchema, formData);
+  const weddingId = String(formData.get("wedding_id") ?? "");
+  const back = `/weddings/${weddingId}`;
+  if ("error" in parsed) fail(back, "remove_day_failed");
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("wedding_days")
+    .delete()
+    .eq("id", parsed.data.id)
+    .eq("wedding_id", parsed.data.wedding_id)
+    .select("id");
+  if (error || !data?.length) fail(back, "remove_day_failed");
+  touchWedding(parsed.data.wedding_id);
+  done(back, "day_removed");
+}
+
+export async function addWeddingPlace(formData: FormData) {
+  await requireAdmin();
+  const weddingId = String(formData.get("wedding_id") ?? "");
+  const back = `/weddings/${weddingId}`;
+  const parsed = parseForm(weddingPlaceSchema, formData);
+  if ("error" in parsed) fail(back, parsed.error);
+  const supabase = await createClient();
+  const { data: wedding, error: weddingError } = await supabase
+    .from("weddings")
+    .select("id")
+    .eq("id", parsed.data.wedding_id)
+    .maybeSingle();
+  if (weddingError || !wedding) fail(back, "add_place_failed");
+  const { error } = await supabase.from("wedding_locations").insert({
+    wedding_id: wedding.id,
+    label: parsed.data.label,
+    venue_name: parsed.data.venue_name,
+    city: parsed.data.city,
+    location_url: parsed.data.location_url,
+  });
+  if (error) fail(back, "add_place_failed");
+  touchWedding(wedding.id);
+  done(back, "place_added");
+}
+
+export async function removeWeddingPlace(formData: FormData) {
+  await requireAdmin();
+  const parsed = parseForm(weddingChildSchema, formData);
+  const weddingId = String(formData.get("wedding_id") ?? "");
+  const back = `/weddings/${weddingId}`;
+  if ("error" in parsed) fail(back, "remove_place_failed");
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("wedding_locations")
+    .delete()
+    .eq("id", parsed.data.id)
+    .eq("wedding_id", parsed.data.wedding_id)
+    .select("id");
+  if (error || !data?.length) fail(back, "remove_place_failed");
+  touchWedding(parsed.data.wedding_id);
+  done(back, "place_removed");
+}
+
+export async function saveWeddingFeatures(formData: FormData) {
+  await requireAdmin();
+  const weddingId = String(formData.get("wedding_id") ?? "");
+  const back = `/weddings/${weddingId}`;
+  const parsed = parseForm(weddingFeaturesSchema, formData);
+  if ("error" in parsed) fail(back, "save_inclusions_failed");
+  const features = featureLines(formData);
+  if (features === "err_features") fail(back, "err_features");
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("weddings")
+    .update({ features })
+    .eq("id", parsed.data.wedding_id)
+    .select("id");
+  if (error || !data?.length) fail(back, "save_inclusions_failed");
+  revalidatePath(back);
+  revalidatePath(`/weddings/${parsed.data.wedding_id}/contract`);
+  done(back, "inclusions_saved");
+}
+
+export async function resetWeddingFeatures(formData: FormData) {
+  await requireAdmin();
+  const weddingId = String(formData.get("wedding_id") ?? "");
+  const back = `/weddings/${weddingId}`;
+  const parsed = parseForm(weddingFeaturesSchema, formData);
+  if ("error" in parsed) fail(back, "save_inclusions_failed");
+  const supabase = await createClient();
+  const { data: wedding, error: weddingError } = await supabase
+    .from("weddings")
+    .select("package_id")
+    .eq("id", parsed.data.wedding_id)
+    .maybeSingle();
+  if (weddingError || !wedding?.package_id) fail(back, "save_inclusions_failed");
+  const { data: pack, error: packError } = await supabase
+    .from("packages")
+    .select("features")
+    .eq("id", wedding.package_id)
+    .maybeSingle();
+  if (packError || !pack) fail(back, "save_inclusions_failed");
+  const { error } = await supabase
+    .from("weddings")
+    .update({ features: asFeatures(pack.features) })
+    .eq("id", parsed.data.wedding_id);
+  if (error) fail(back, "save_inclusions_failed");
+  revalidatePath(back);
+  revalidatePath(`/weddings/${parsed.data.wedding_id}/contract`);
+  done(back, "inclusions_reset");
 }
 
 export async function saveWedding(formData: FormData) {
@@ -225,16 +658,50 @@ export async function saveWedding(formData: FormData) {
   const supabase = await createClient();
   const data = parsed.data;
 
+  const { data: current } = id
+    ? await supabase.from("weddings").select("wedding_date, status, package_id, package_price_millimes").eq("id", id).maybeSingle()
+    : { data: null };
+
   const allowDouble = formData.get("allow_double") === "on";
   if (!allowDouble && data.status !== "cancelled") {
-    let dateChanged = true;
-    if (id) {
-      const { data: current } = await supabase.from("weddings").select("wedding_date, status").eq("id", id).maybeSingle();
-      dateChanged = !current || current.wedding_date !== data.wedding_date || current.status === "cancelled";
-    }
+    const dateChanged = !current || current.wedding_date !== data.wedding_date || current.status === "cancelled";
     if (dateChanged && (await dateTaken(supabase, data.wedding_date, id || undefined))) {
       fail(back, doubleBookingMessage(data.wedding_date));
     }
+  }
+
+  const nextPackageId = emptyToNull(data.package_id);
+  let packagePrice: number | null = current?.package_price_millimes ?? null;
+  const packageChanged = !current || nextPackageId !== current.package_id;
+  let nextFeatures: string[] | null | undefined;
+  if (!nextPackageId) {
+    packagePrice = null;
+    if (packageChanged) nextFeatures = null;
+  } else if (packageChanged) {
+    const { data: pack, error: packError } = await supabase
+      .from("packages")
+      .select("price_millimes, features")
+      .eq("id", nextPackageId)
+      .maybeSingle();
+    if (packError || !pack) fail(back, "save_wedding_failed");
+    packagePrice = pack.price_millimes;
+    nextFeatures = asFeatures(pack.features);
+  }
+
+  let extras = { count: 0, sum: 0 };
+  if (id) {
+    const { data: lines, error: linesError } = await supabase.from("wedding_extras").select("price_millimes").eq("wedding_id", id);
+    if (linesError) fail(back, "save_wedding_failed");
+    const rows = lines ?? [];
+    extras = { count: rows.length, sum: rows.reduce((sum, line) => sum + line.price_millimes, 0) };
+  }
+
+  const offerOwns = packagePrice != null || extras.count > 0;
+  let total = data.total;
+  if (offerOwns) {
+    total = (packagePrice ?? 0) + extras.sum;
+  } else if (current?.package_price_millimes != null) {
+    total = 0;
   }
 
   if (id) {
@@ -242,26 +709,31 @@ export async function saveWedding(formData: FormData) {
       .from("weddings")
       .update({
         client_id: data.client_id,
-        package_id: emptyToNull(data.package_id),
+        package_id: nextPackageId,
+        package_price_millimes: packagePrice,
         wedding_date: data.wedding_date,
         start_time: emptyToNull(data.start_time),
         venue_name: data.venue_name,
         city: data.city,
         governorate: data.governorate,
+        location_url: data.location_url,
         status: data.status,
-        total_millimes: data.total,
+        total_millimes: total,
         day_plan: data.day_plan,
+        ...(nextFeatures !== undefined ? { features: nextFeatures } : {}),
       })
       .eq("id", id);
     if (error) fail(back, "save_wedding_failed");
-    revalidatePath(back);
-    revalidatePath("/weddings");
+    const { error: dayError } = await supabase.from("wedding_days").delete().eq("wedding_id", id).eq("day_date", data.wedding_date);
+    if (dayError) fail(back, "save_wedding_failed");
+    revalidateWeddingMoney(id);
+    revalidatePath("/calendar");
     done(back, "wedding_saved");
   }
 
   const { data: weddingId, error } = await supabase.rpc("create_wedding", {
     p_client_id: data.client_id,
-    p_package_id: emptyToNull(data.package_id),
+    p_package_id: nextPackageId,
     p_lead_id: null,
     p_wedding_date: data.wedding_date,
     p_start_time: emptyToNull(data.start_time),
@@ -269,11 +741,20 @@ export async function saveWedding(formData: FormData) {
     p_city: data.city,
     p_governorate: data.governorate,
     p_status: data.status,
-    p_total_millimes: data.total,
+    p_total_millimes: total,
     p_day_plan: data.day_plan,
   });
   if (error || !weddingId) fail(back, "wedding_unsaved");
+  const patch: { location_url?: string; package_price_millimes?: number; features?: string[] | null } = {};
+  if (data.location_url) patch.location_url = data.location_url;
+  if (packagePrice != null) patch.package_price_millimes = packagePrice;
+  if (nextFeatures !== undefined) patch.features = nextFeatures;
+  if (Object.keys(patch).length > 0) {
+    const { error: linkError } = await supabase.from("weddings").update(patch).eq("id", weddingId);
+    if (linkError) fail(`/weddings/${weddingId}`, "save_wedding_failed");
+  }
   revalidatePath("/weddings");
+  revalidatePath("/payments");
   revalidatePath("/");
   done(`/weddings/${weddingId}`, "wedding_added");
 }
@@ -296,6 +777,7 @@ export async function savePayment(formData: FormData) {
   if (error) fail(back, "save_payment_failed");
   revalidatePath("/payments");
   revalidatePath(`/weddings/${parsed.data.wedding_id}`);
+  revalidatePath(`/weddings/${parsed.data.wedding_id}/contract`);
   revalidatePath("/");
   done(back, "payment_added");
 }
@@ -333,6 +815,43 @@ export async function saveInvoice(formData: FormData) {
   redirect(`/invoices/${data}`);
 }
 
+export async function saveContract(formData: FormData) {
+  await requireAdmin();
+  const weddingId = String(formData.get("wedding_id") ?? "");
+  const back = `/weddings/${weddingId}/contract`;
+  const parsed = parseForm(contractSchema, formData);
+  if ("error" in parsed) fail(back, parsed.error);
+  const supabase = await createClient();
+  const { data: wedding, error: weddingError } = await supabase
+    .from("weddings")
+    .select("id")
+    .eq("id", parsed.data.wedding_id)
+    .maybeSingle();
+  if (weddingError || !wedding) fail(back, "save_contract_failed");
+  const { wedding_id: weddingIdSaved, ...fields } = parsed.data;
+  const { error } = await supabase.from("contracts").upsert({
+    wedding_id: weddingIdSaved,
+    fields,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) fail(back, "save_contract_failed");
+  revalidatePath(back);
+  done(back, "contract_saved");
+}
+
+export async function resetContract(formData: FormData) {
+  await requireAdmin();
+  const weddingId = String(formData.get("wedding_id") ?? "");
+  const back = `/weddings/${weddingId}/contract`;
+  const parsed = parseForm(contractSchema.pick({ wedding_id: true }), formData);
+  if ("error" in parsed) fail(back, parsed.error);
+  const supabase = await createClient();
+  const { error } = await supabase.from("contracts").delete().eq("wedding_id", parsed.data.wedding_id);
+  if (error) fail(back, "reset_contract_failed");
+  revalidatePath(back);
+  done(back, "contract_reset");
+}
+
 export async function markPaymentPaid(formData: FormData) {
   await requireAdmin();
   const back = returnTo(formData, "/payments");
@@ -348,6 +867,7 @@ export async function markPaymentPaid(formData: FormData) {
   if (error || !data) fail(back, "update_payment_failed");
   revalidatePath("/payments");
   revalidatePath(`/weddings/${data.wedding_id}`);
+  revalidatePath(`/weddings/${data.wedding_id}/contract`);
   revalidatePath("/");
   done(back, "payment_paid");
 }
@@ -372,7 +892,7 @@ export async function saveExpense(formData: FormData) {
 }
 
 export async function saveTask(formData: FormData) {
-  await requireUser();
+  const profile = await requireUser();
   const parsed = parseForm(taskSchema, formData);
   const weddingId = String(formData.get("wedding_id") ?? "");
   const back = `/weddings/${weddingId}`;
@@ -384,7 +904,7 @@ export async function saveTask(formData: FormData) {
     title: parsed.data.title,
     due_date: emptyToNull(parsed.data.due_date),
     status: parsed.data.status,
-    assignee_id: emptyToNull(parsed.data.assignee_id),
+    assignee_id: profile.role === "admin" ? emptyToNull(parsed.data.assignee_id) : profile.id,
   };
   const { error } = id
     ? await supabase.from("tasks").update(row).eq("id", id)

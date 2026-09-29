@@ -1,7 +1,9 @@
 import { NavLinks, LanguageSwitcher } from "@/components/client";
+import { LogoMark } from "@/components/ui";
 import { signOut } from "@/lib/actions";
 import type { Profile } from "@/lib/auth";
 import type { Locale, Messages } from "@/lib/i18n";
+import Link from "next/link";
 
 const linkKeys = [
   { href: "/", key: "dashboard" as const },
@@ -13,6 +15,12 @@ const linkKeys = [
   { href: "/packages", key: "packages" as const, admin: true },
   { href: "/team", key: "team" as const, admin: true },
 ];
+
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean).slice(0, 2);
+  const letters = parts.map((part) => part[0]?.toUpperCase() ?? "").join("");
+  return letters || "Y";
+}
 
 export function Shell({
   profile,
@@ -28,40 +36,53 @@ export function Shell({
   const items = linkKeys
     .filter((link) => !link.admin || profile.role === "admin")
     .map(({ href, key }) => ({ href, label: messages.nav[key] }));
-  const languageSwitcher = (
-    <LanguageSwitcher locale={locale} label={messages.ui.language} />
-  );
-  const signOutForm = (
+  const languageSwitcher = <LanguageSwitcher locale={locale} label={messages.ui.language} />;
+  const signOutButton = (className: string) => (
     <form action={signOut}>
-      <button className="ghost w-full" type="submit">
+      <button className={className} type="submit">
         {messages.auth.signOut}
       </button>
     </form>
   );
+
   return (
-    <div className="min-h-screen md:grid md:grid-cols-[240px_1fr]">
-      <aside className="relative border-b border-line bg-surface print:hidden md:sticky md:top-0 md:flex md:h-screen md:flex-col md:border-r md:border-b-0">
-        <div className="flex items-start justify-between gap-3 px-6 py-5 md:py-7">
-          <div>
-            <p className="font-display text-xl">Yesser</p>
-            <p className="text-xs tracking-[0.18em] text-muted uppercase">{messages.brandTagline}</p>
+    <div className="min-h-screen">
+      <header className="sticky top-0 z-30 print:hidden">
+        <div className="relative border-b border-line bg-surface">
+          <div className="mx-auto flex max-w-7xl items-center gap-3 px-5 py-3 md:px-8">
+            <Link href="/" className="flex shrink-0 items-center gap-2.5 no-underline">
+              <LogoMark />
+              <span className="text-[15px] font-semibold tracking-tight">Yesser</span>
+            </Link>
+            <NavLinks
+              items={items}
+              menuLabel={messages.ui.menu}
+              closeLabel={messages.ui.close}
+              languageSwitcher={languageSwitcher}
+              desktopExtra={
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
+                    {initials(profile.full_name)}
+                  </span>
+                  <div className="leading-tight">
+                    <p className="max-w-40 truncate text-sm font-semibold">{profile.full_name}</p>
+                    <p className="text-xs text-muted">{messages.terms[profile.role]}</p>
+                  </div>
+                  {signOutButton("ghost")}
+                </div>
+              }
+              mobileFooter={
+                <div className="mt-3 border-t border-line pt-3">
+                  <p className="truncate text-sm font-semibold">{profile.full_name}</p>
+                  <p className="mb-3 text-xs text-muted">{messages.terms[profile.role]}</p>
+                  {signOutButton("ghost w-full")}
+                </div>
+              }
+            />
           </div>
-          <div className="hidden shrink-0 md:block">{languageSwitcher}</div>
         </div>
-        <NavLinks
-          items={items}
-          mobileFooter={signOutForm}
-          menuLabel={messages.ui.menu}
-          closeLabel={messages.ui.close}
-          languageSwitcher={languageSwitcher}
-        />
-        <div className="mt-auto hidden border-t border-line px-6 py-4 md:block">
-          <p className="truncate text-sm font-medium">{profile.full_name}</p>
-          <p className="mb-3 text-xs text-muted">{messages.terms[profile.role]}</p>
-          {signOutForm}
-        </div>
-      </aside>
-      <main className="mx-auto w-full max-w-6xl px-5 py-8 md:px-10 md:py-10 print:max-w-none print:px-0 print:py-0">{children}</main>
+      </header>
+      <main className="mx-auto w-full max-w-7xl px-5 py-8 md:px-8 md:py-10 print:max-w-none print:px-0 print:py-0">{children}</main>
     </div>
   );
 }

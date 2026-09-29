@@ -89,6 +89,17 @@ export function formatDate(value: string | null | undefined, locale: "en" | "fr"
   }).format(new Date(Date.UTC(year, month - 1, day)));
 }
 
+export function calendarYear(year: number, locale: "en" | "fr" = "en") {
+  return Array.from({ length: 12 }, (_, index) => {
+    const month = index + 1;
+    const key = `${year}-${String(month).padStart(2, "0")}`;
+    const label = new Intl.DateTimeFormat(locale === "fr" ? "fr-FR" : "en-GB", { month: "short", timeZone: "UTC" }).format(
+      new Date(Date.UTC(year, month - 1, 1)),
+    );
+    return { key, label, year, month };
+  });
+}
+
 export function last12Months(locale: "en" | "fr" = "en") {
   const stamp = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Africa/Tunis",

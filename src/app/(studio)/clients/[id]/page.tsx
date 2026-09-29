@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ConfirmSubmit } from "@/components/client";
 import { ClientForm } from "@/components/record-forms";
 import { Banner, EmptyState, PageHeader, Section, StatusBadge, coupleName } from "@/components/ui";
+import { deleteClient } from "@/lib/actions";
 import { requireAdmin } from "@/lib/auth";
 import { formatDate } from "@/lib/constants";
-import { getMessages } from "@/lib/i18n";
+import { fill, getMessages } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
 import { createClient } from "@/lib/supabase/server";
 
@@ -38,6 +40,16 @@ export default async function ClientPage({
       <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
         <Section title={messages.couples.details}>
           <ClientForm client={client} />
+          <form action={deleteClient} className="mt-4">
+            <input type="hidden" name="id" value={client.id} />
+            <ConfirmSubmit
+              message={fill(messages.couples.deleteConfirm, {
+                name: coupleName(client.partner_one_name, client.partner_two_name),
+              })}
+            >
+              {messages.common.delete}
+            </ConfirmSubmit>
+          </form>
         </Section>
         <Section title={messages.couples.weddings} className="self-start">
           {(weddings.data ?? []).length === 0 ? (

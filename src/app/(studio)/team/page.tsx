@@ -146,7 +146,7 @@ export default async function TeamPage({
                     {pay.total ? (
                       <>
                         <span className="font-medium">{formatTnd(pay.total)}</span>
-                        <span className={`block text-xs ${pay.unpaid ? "text-red-700" : "text-emerald-700"}`}>
+                        <span className={`block text-xs ${pay.unpaid ? "text-red-700" : "text-ink"}`}>
                           {pay.unpaid ? fill(messages.common.toPay, { amount: formatTnd(pay.unpaid) }) : messages.common.allPaid}
                         </span>
                       </>
