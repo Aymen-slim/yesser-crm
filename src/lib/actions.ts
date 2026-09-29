@@ -1047,7 +1047,7 @@ export async function uploadWeddingFile(formData: FormData) {
   if (!(file instanceof File) || file.size === 0) {
     fail(back, "choose_file");
   }
-  if (file.size > 10 * 1024 * 1024) {
+  if (file.size > 4 * 1024 * 1024) {
     fail(back, "file_too_big");
   }
   if (!ALLOWED_FILE_EXTENSION.test(file.name) || (file.type && !ALLOWED_FILE_TYPES.has(file.type))) {
