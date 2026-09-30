@@ -71,6 +71,8 @@ function emptyToNull(value: string | undefined | null) {
   return value ? value : null;
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function asFeatures(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value
@@ -761,11 +763,14 @@ export async function saveWedding(formData: FormData) {
 
 export async function savePayment(formData: FormData) {
   await requireAdmin();
-  const back = returnTo(formData, "/payments");
+  const destination = returnTo(formData, "/payments");
+  const id = String(formData.get("id") ?? "");
+  if (id && !UUID.test(id)) fail(destination, "save_payment_failed");
+  const back = id ? withParam(destination, "edit", id) : destination;
   const parsed = parseForm(paymentSchema, formData);
   if ("error" in parsed) fail(back, parsed.error);
   const supabase = await createClient();
-  const { error } = await supabase.from("payments").insert({
+  const row = {
     wedding_id: parsed.data.wedding_id,
     label: parsed.data.label,
     amount_millimes: parsed.data.amount,
@@ -773,13 +778,36 @@ export async function savePayment(formData: FormData) {
     paid_at: emptyToNull(parsed.data.paid_at),
     method: emptyToNull(parsed.data.method),
     note: parsed.data.note,
-  });
+  };
+  if (id) {
+    const { data: current, error: currentError } = await supabase
+      .from("payments")
+      .select("wedding_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (currentError || !current) fail(back, "save_payment_failed");
+    const { data, error } = await supabase.from("payments").update(row).eq("id", id).select("id").maybeSingle();
+    if (error || !data) fail(back, "save_payment_failed");
+    revalidateWeddingMoney(current.wedding_id);
+    if (current.wedding_id !== parsed.data.wedding_id) revalidateWeddingMoney(parsed.data.wedding_id);
+    done(destination, "payment_saved");
+  }
+  const { error } = await supabase.from("payments").insert(row);
   if (error) fail(back, "save_payment_failed");
-  revalidatePath("/payments");
-  revalidatePath(`/weddings/${parsed.data.wedding_id}`);
-  revalidatePath(`/weddings/${parsed.data.wedding_id}/contract`);
-  revalidatePath("/");
-  done(back, "payment_added");
+  revalidateWeddingMoney(parsed.data.wedding_id);
+  done(destination, "payment_added");
+}
+
+export async function deletePayment(formData: FormData) {
+  await requireAdmin();
+  const destination = returnTo(formData, "/payments");
+  const id = String(formData.get("id") ?? "");
+  if (!UUID.test(id)) fail(destination, "delete_payment_failed");
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("payments").delete().eq("id", id).select("wedding_id").maybeSingle();
+  if (error || !data) fail(destination, "delete_payment_failed");
+  revalidateWeddingMoney(data.wedding_id);
+  done(destination, "payment_deleted");
 }
 
 export async function saveInvoice(formData: FormData) {
@@ -874,21 +902,45 @@ export async function markPaymentPaid(formData: FormData) {
 
 export async function saveExpense(formData: FormData) {
   const profile = await requireAdmin();
+  const destination = returnTo(formData, "/expenses");
+  const id = String(formData.get("id") ?? "");
+  if (id && !UUID.test(id)) fail(destination, "save_expense_failed");
+  const back = id ? withParam(destination, "edit", id) : destination;
   const parsed = parseForm(expenseSchema, formData);
-  if ("error" in parsed) fail("/expenses", parsed.error);
+  if ("error" in parsed) fail(back, parsed.error);
   const supabase = await createClient();
-  const { error } = await supabase.from("expenses").insert({
+  const row = {
     wedding_id: emptyToNull(parsed.data.wedding_id),
     category: parsed.data.category,
     amount_millimes: parsed.data.amount,
     spent_on: parsed.data.spent_on,
     note: parsed.data.note,
-    created_by: profile.id,
-  });
-  if (error) fail("/expenses", "save_expense_failed");
+  };
+  if (id) {
+    const { data, error } = await supabase.from("expenses").update(row).eq("id", id).select("id").maybeSingle();
+    if (error || !data) fail(back, "save_expense_failed");
+    revalidatePath("/expenses");
+    revalidatePath("/");
+    done(destination, "expense_saved");
+  }
+  const { error } = await supabase.from("expenses").insert({ ...row, created_by: profile.id });
+  if (error) fail(back, "save_expense_failed");
   revalidatePath("/expenses");
   revalidatePath("/");
-  done("/expenses", "expense_added");
+  done(destination, "expense_added");
+}
+
+export async function deleteExpense(formData: FormData) {
+  await requireAdmin();
+  const destination = returnTo(formData, "/expenses");
+  const id = String(formData.get("id") ?? "");
+  if (!UUID.test(id)) fail(destination, "delete_expense_failed");
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("expenses").delete().eq("id", id).select("id").maybeSingle();
+  if (error || !data) fail(destination, "delete_expense_failed");
+  revalidatePath("/expenses");
+  revalidatePath("/");
+  done(destination, "expense_deleted");
 }
 
 export async function saveTask(formData: FormData) {

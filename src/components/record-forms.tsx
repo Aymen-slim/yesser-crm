@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {
   addWeddingDay,
   addWeddingPlace,
@@ -530,21 +531,35 @@ export async function PaymentForm({
   weddings = [],
   weddingId,
   returnTo,
+  cancelHref,
+  payment,
 }: {
   weddings?: { id: string; label: string }[];
   weddingId?: string;
   returnTo?: string;
+  cancelHref?: string;
+  payment?: {
+    id: string;
+    wedding_id: string;
+    label: string;
+    amount_millimes: number;
+    due_date: string | null;
+    paid_at: string | null;
+    method: string | null;
+    note: string;
+  };
 }) {
   const messages = await copy();
   const f = messages.forms;
   return (
     <form action={savePayment} className={formGrid}>
+      {payment ? <input type="hidden" name="id" value={payment.id} /> : null}
       {returnTo ? <input type="hidden" name="return_to" value={returnTo} /> : null}
       {weddingId ? (
         <input type="hidden" name="wedding_id" value={weddingId} />
       ) : (
         <Field label={f.wedding}>
-          <select name="wedding_id" required>
+          <select name="wedding_id" defaultValue={payment?.wedding_id ?? ""} required>
             <option value="">{messages.common.choose}</option>
             {weddings.map((wedding) => (
               <option key={wedding.id} value={wedding.id}>
@@ -555,28 +570,39 @@ export async function PaymentForm({
         </Field>
       )}
       <Field label={f.label}>
-        <input name="label" placeholder={f.deposit} required />
+        <input name="label" placeholder={f.deposit} defaultValue={payment?.label} required />
       </Field>
       <Field label={f.amount}>
-        <input name="amount" inputMode="decimal" placeholder="0.000" required />
+        <input
+          name="amount"
+          inputMode="decimal"
+          placeholder="0.000"
+          defaultValue={payment ? (payment.amount_millimes / 1000).toFixed(3) : undefined}
+          required
+        />
       </Field>
       <Field label={f.dueDate}>
-        <input name="due_date" type="date" />
+        <input name="due_date" type="date" defaultValue={payment?.due_date ?? ""} />
       </Field>
       <Field label={f.paidOn}>
-        <input name="paid_at" type="date" />
+        <input name="paid_at" type="date" defaultValue={payment?.paid_at ?? ""} />
       </Field>
       <Field label={f.method}>
-        <select name="method" defaultValue="">
+        <select name="method" defaultValue={payment?.method ?? ""}>
           <option value="">{f.notPaidYet}</option>
           <Options values={PAYMENT_METHODS} messages={messages} />
         </select>
       </Field>
       <Field label={f.note} wide={Boolean(weddingId)}>
-        <input name="note" />
+        <input name="note" defaultValue={payment?.note ?? ""} />
       </Field>
       <FormActions>
-        <SubmitButton pendingLabel={messages.common.saving}>{f.addPayment}</SubmitButton>
+        <SubmitButton pendingLabel={messages.common.saving}>{payment ? f.savePayment : f.addPayment}</SubmitButton>
+        {payment && cancelHref ? (
+          <Link href={cancelHref} className="text-sm text-muted">
+            {messages.common.cancel}
+          </Link>
+        ) : null}
       </FormActions>
     </form>
   );
@@ -673,22 +699,47 @@ export async function InvoiceForm({
   );
 }
 
-export async function ExpenseForm({ weddings }: { weddings: { id: string; label: string }[] }) {
+export async function ExpenseForm({
+  weddings,
+  expense,
+  returnTo,
+  cancelHref,
+}: {
+  weddings: { id: string; label: string }[];
+  expense?: {
+    id: string;
+    wedding_id: string | null;
+    category: string;
+    amount_millimes: number;
+    spent_on: string;
+    note: string;
+  };
+  returnTo?: string;
+  cancelHref?: string;
+}) {
   const messages = await copy();
   const f = messages.forms;
   return (
     <form action={saveExpense} className={formGrid}>
+      {expense ? <input type="hidden" name="id" value={expense.id} /> : null}
+      {returnTo ? <input type="hidden" name="return_to" value={returnTo} /> : null}
       <Field label={f.category}>
-        <input name="category" placeholder={f.categoryHint} required />
+        <input name="category" placeholder={f.categoryHint} defaultValue={expense?.category} required />
       </Field>
       <Field label={f.amount}>
-        <input name="amount" inputMode="decimal" placeholder="0.000" required />
+        <input
+          name="amount"
+          inputMode="decimal"
+          placeholder="0.000"
+          defaultValue={expense ? (expense.amount_millimes / 1000).toFixed(3) : undefined}
+          required
+        />
       </Field>
       <Field label={f.spentOn}>
-        <input name="spent_on" type="date" defaultValue={todayInTunis()} required />
+        <input name="spent_on" type="date" defaultValue={expense?.spent_on ?? todayInTunis()} required />
       </Field>
       <Field label={f.wedding}>
-        <select name="wedding_id" defaultValue="">
+        <select name="wedding_id" defaultValue={expense?.wedding_id ?? ""}>
           <option value="">{f.studioNotWedding}</option>
           {weddings.map((wedding) => (
             <option key={wedding.id} value={wedding.id}>
@@ -698,10 +749,15 @@ export async function ExpenseForm({ weddings }: { weddings: { id: string; label:
         </select>
       </Field>
       <Field label={f.note} wide>
-        <input name="note" />
+        <input name="note" defaultValue={expense?.note ?? ""} />
       </Field>
       <FormActions>
-        <SubmitButton pendingLabel={messages.common.saving}>{f.addExpense}</SubmitButton>
+        <SubmitButton pendingLabel={messages.common.saving}>{expense ? f.saveExpense : f.addExpense}</SubmitButton>
+        {expense && cancelHref ? (
+          <Link href={cancelHref} className="text-sm text-muted">
+            {messages.common.cancel}
+          </Link>
+        ) : null}
       </FormActions>
     </form>
   );

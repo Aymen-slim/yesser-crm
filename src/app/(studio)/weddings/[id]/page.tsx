@@ -14,7 +14,7 @@ import {
   WeddingPlaceForm,
 } from "@/components/record-forms";
 import { Badge, Banner, Card, Disclosure, EmptyState, PageHeader, Section, StatusBadge, coupleName } from "@/components/ui";
-import { addWeddingExtra, deleteTask, deleteWeddingFile, removeWeddingDay, removeWeddingExtra, removeWeddingPlace, resetWeddingFeatures, saveWeddingFeatures, saveWeddingOffer, setCrewPaid, unassignMember, updateWeddingExtra } from "@/lib/actions";
+import { addWeddingExtra, deletePayment, deleteTask, deleteWeddingFile, removeWeddingDay, removeWeddingExtra, removeWeddingPlace, resetWeddingFeatures, saveWeddingFeatures, saveWeddingOffer, setCrewPaid, unassignMember, updateWeddingExtra } from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
 import { formatDate, one, todayInTunis } from "@/lib/constants";
 import { fill, getMessages } from "@/lib/i18n";
@@ -27,13 +27,13 @@ export default async function WeddingPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; notice?: string }>;
+  searchParams: Promise<{ error?: string; notice?: string; edit?: string }>;
 }) {
   const profile = await requireUser();
   const locale = await getLocale();
   const messages = getMessages(locale);
   const { id } = await params;
-  const { error, notice } = await searchParams;
+  const { error, notice, edit } = await searchParams;
   const admin = profile.role === "admin";
   const today = todayInTunis();
   const supabase = await createClient();
@@ -67,7 +67,7 @@ export default async function WeddingPage({
       .eq("wedding_id", id),
     supabase.from("files").select("id, file_name, storage_path, created_at").eq("wedding_id", id).order("created_at", { ascending: false }),
     admin
-      ? supabase.from("payments").select("id, label, amount_millimes, due_date, paid_at, method").eq("wedding_id", id).order("due_date", { nullsFirst: false })
+      ? supabase.from("payments").select("id, label, amount_millimes, due_date, paid_at, method, note").eq("wedding_id", id).order("due_date", { nullsFirst: false })
       : skip,
     admin ? supabase.from("clients").select("id, partner_one_name, partner_two_name").order("partner_one_name") : skip,
     admin ? supabase.from("packages").select("id, name, price_millimes").order("name") : skip,
@@ -99,6 +99,7 @@ export default async function WeddingPage({
         ? Math.max(0, wedding.total_millimes - extrasSum)
         : null;
   const packagePriceDefault = agreedBase != null ? (agreedBase / 1000).toFixed(3) : "";
+  const editingPayment = (payments.data ?? []).find((payment) => payment.id === edit) ?? null;
   const paidTotal = (payments.data ?? []).filter((p) => p.paid_at).reduce((sum, p) => sum + p.amount_millimes, 0);
   const remaining = wedding.total_millimes - paidTotal;
   const openTasks = (tasks.data ?? []).filter((task) => task.status !== "done").length;
@@ -474,15 +475,46 @@ export default async function WeddingPage({
                               : fill(messages.common.dueOn, { date: formatDate(payment.due_date, locale) })}
                           </span>
                         </span>
-                        {payment.paid_at ? null : <MarkPaidForm paymentId={payment.id} returnTo={backPath} />}
+                        <span className="flex flex-wrap items-center justify-end gap-2">
+                          {payment.paid_at ? null : <MarkPaidForm paymentId={payment.id} returnTo={backPath} />}
+                          <Link href={`${backPath}?edit=${payment.id}#payment-editor`} className="text-sm">
+                            {messages.common.edit}
+                          </Link>
+                          <form action={deletePayment}>
+                            <input type="hidden" name="id" value={payment.id} />
+                            <input type="hidden" name="return_to" value={backPath} />
+                            <ConfirmSubmit message={fill(messages.payments.deleteConfirm, { name: payment.label })}>
+                              {messages.common.delete}
+                            </ConfirmSubmit>
+                          </form>
+                        </span>
                       </li>
                     );
                   })}
                 </ul>
               )}
-              <div className="mt-4 border-t border-line pt-4">
-                <Disclosure label={messages.weddings.recordPayment}>
-                  <PaymentForm weddingId={id} returnTo={backPath} />
+              <div id="payment-editor" className="mt-4 border-t border-line pt-4">
+                <Disclosure label={editingPayment ? messages.payments.edit : messages.weddings.recordPayment} open={Boolean(editingPayment)}>
+                  <PaymentForm
+                    key={editingPayment?.id ?? "new"}
+                    weddingId={id}
+                    returnTo={backPath}
+                    cancelHref={editingPayment ? backPath : undefined}
+                    payment={
+                      editingPayment
+                        ? {
+                            id: editingPayment.id,
+                            wedding_id: id,
+                            label: editingPayment.label,
+                            amount_millimes: editingPayment.amount_millimes,
+                            due_date: editingPayment.due_date,
+                            paid_at: editingPayment.paid_at,
+                            method: editingPayment.method,
+                            note: editingPayment.note ?? "",
+                          }
+                        : undefined
+                    }
+                  />
                 </Disclosure>
               </div>
             </Section>

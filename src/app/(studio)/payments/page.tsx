@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ConfirmSubmit } from "@/components/client";
 import { MarkPaidForm, PaymentForm } from "@/components/record-forms";
 import {
   Banner,
@@ -11,6 +12,7 @@ import {
   TableCard,
   coupleName,
 } from "@/components/ui";
+import { deletePayment } from "@/lib/actions";
 import { requireAdmin } from "@/lib/auth";
 import { PAGE_SIZE, formatDate, one, todayInTunis } from "@/lib/constants";
 import { fill, getMessages, term } from "@/lib/i18n";
@@ -28,7 +30,7 @@ const VIEWS = ["unpaid", "overdue", "paid"] as const;
 export default async function PaymentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; notice?: string; page?: string; view?: string }>;
+  searchParams: Promise<{ error?: string; notice?: string; page?: string; view?: string; edit?: string }>;
 }) {
   await requireAdmin();
   const locale = await getLocale();
@@ -49,7 +51,17 @@ export default async function PaymentsPage({
   if (view === "unpaid") query = query.is("paid_at", null);
   if (view === "overdue") query = query.is("paid_at", null).lt("due_date", today);
 
-  const [payments, options, invoices] = await Promise.all([
+  const listQuery = new URLSearchParams();
+  if (view) listQuery.set("view", view);
+  if (page > 1) listQuery.set("page", String(page));
+  const returnTo = listQuery.size ? `/payments?${listQuery}` : "/payments";
+  const editHref = (id: string) => {
+    const next = new URLSearchParams(listQuery);
+    next.set("edit", id);
+    return `/payments?${next}#payment-editor`;
+  };
+
+  const [payments, options, invoices, editingPayment] = await Promise.all([
     query,
     weddingOptions(supabase, locale, messages.common.wedding),
     supabase
@@ -57,16 +69,31 @@ export default async function PaymentsPage({
       .select("id, number, wedding_id, weddings(clients(partner_one_name, partner_two_name))")
       .order("created_at", { ascending: false })
       .limit(12),
+    params.edit
+      ? supabase
+          .from("payments")
+          .select("id, wedding_id, label, amount_millimes, due_date, paid_at, method, note")
+          .eq("id", params.edit)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
   ]);
-  const returnTo = view ? `/payments?view=${view}` : "/payments";
+  const editing = editingPayment.data;
 
   return (
     <div>
       <PageHeader title={messages.payments.title} subtitle={messages.payments.subtitle} />
       <Banner error={params.error} notice={params.notice} />
-      <Disclosure label={messages.payments.record} open={Boolean(params.error)}>
-        <PaymentForm weddings={options} returnTo={returnTo} />
+      <div id="payment-editor">
+      <Disclosure label={editing ? messages.payments.edit : messages.payments.record} open={Boolean(params.error) || Boolean(editing)}>
+        <PaymentForm
+          key={editing?.id ?? "new"}
+          weddings={options}
+          returnTo={returnTo}
+          cancelHref={editing ? returnTo : undefined}
+          payment={editing ?? undefined}
+        />
       </Disclosure>
+      </div>
       <FilterTabs
         active={view ?? "all"}
         items={[
@@ -128,7 +155,23 @@ export default async function PaymentsPage({
                           : messages.common.noDueDate}
                     </span>
                   </td>
-                  <td>{payment.paid_at ? null : <MarkPaidForm paymentId={payment.id} returnTo={returnTo} />}</td>
+                  <td>
+                    <div className="flex flex-col items-end gap-2">
+                      {payment.paid_at ? null : <MarkPaidForm paymentId={payment.id} returnTo={returnTo} />}
+                      <span className="flex items-center gap-2">
+                        <Link href={editHref(payment.id)} className="text-sm">
+                          {messages.common.edit}
+                        </Link>
+                        <form action={deletePayment}>
+                          <input type="hidden" name="id" value={payment.id} />
+                          <input type="hidden" name="return_to" value={returnTo} />
+                          <ConfirmSubmit message={fill(messages.payments.deleteConfirm, { name: payment.label })}>
+                            {messages.common.delete}
+                          </ConfirmSubmit>
+                        </form>
+                      </span>
+                    </div>
+                  </td>
                 </tr>
               );
             })}

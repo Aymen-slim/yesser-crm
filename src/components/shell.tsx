@@ -36,9 +36,9 @@ export function Shell({
   const items = linkKeys
     .filter((link) => !link.admin || profile.role === "admin")
     .map(({ href, key }) => ({ href, label: messages.nav[key] }));
-  const languageSwitcher = <LanguageSwitcher locale={locale} label={messages.ui.language} />;
-  const signOutButton = (className: string) => (
-    <form action={signOut}>
+  const languageSwitcher = () => <LanguageSwitcher locale={locale} label={messages.ui.language} />;
+  const signOutButton = (className: string, fullWidth = false) => (
+    <form action={signOut} className={fullWidth ? "w-full" : undefined}>
       <button className={className} type="submit">
         {messages.auth.signOut}
       </button>
@@ -46,43 +46,53 @@ export function Shell({
   );
 
   return (
-    <div className="min-h-screen">
-      <header className="sticky top-0 z-30 print:hidden">
-        <div className="relative border-b border-line bg-surface">
-          <div className="mx-auto flex max-w-7xl items-center gap-3 px-5 py-3 md:px-8">
-            <Link href="/" className="flex shrink-0 items-center gap-2.5 no-underline">
-              <LogoMark />
-              <span className="text-[15px] font-semibold tracking-tight">Yesser</span>
-            </Link>
-            <NavLinks
-              items={items}
-              menuLabel={messages.ui.menu}
-              closeLabel={messages.ui.close}
-              languageSwitcher={languageSwitcher}
-              desktopExtra={
-                <div className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
-                    {initials(profile.full_name)}
-                  </span>
-                  <div className="leading-tight">
-                    <p className="max-w-40 truncate text-sm font-semibold">{profile.full_name}</p>
-                    <p className="text-xs text-muted">{messages.terms[profile.role]}</p>
-                  </div>
-                  {signOutButton("ghost")}
-                </div>
-              }
-              mobileFooter={
-                <div className="mt-3 border-t border-line pt-3">
-                  <p className="truncate text-sm font-semibold">{profile.full_name}</p>
-                  <p className="mb-3 text-xs text-muted">{messages.terms[profile.role]}</p>
-                  {signOutButton("ghost w-full")}
-                </div>
-              }
-            />
+    <div className="min-h-screen md:flex">
+      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col self-start border-r border-line bg-surface print:hidden md:flex">
+        <Link href="/" className="flex shrink-0 items-center gap-2.5 px-5 py-5 no-underline">
+          <LogoMark />
+          <span className="text-[15px] font-semibold tracking-tight">Yesser</span>
+        </Link>
+        <NavLinks items={items} layout="sidebar" />
+        <div className="mt-auto border-t border-line p-4">
+          <div className="mb-4">{languageSwitcher()}</div>
+          <div className="mb-3 flex items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
+              {initials(profile.full_name)}
+            </span>
+            <div className="min-w-0 leading-tight">
+              <p className="truncate text-sm font-semibold">{profile.full_name}</p>
+              <p className="truncate text-xs text-muted">{messages.terms[profile.role]}</p>
+            </div>
           </div>
+          {signOutButton("ghost w-full", true)}
         </div>
-      </header>
-      <main className="mx-auto w-full max-w-7xl px-5 py-8 md:px-8 md:py-10 print:max-w-none print:px-0 print:py-0">{children}</main>
+      </aside>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-30 print:hidden md:hidden">
+          <div className="relative border-b border-line bg-surface">
+            <div className="flex items-center gap-3 px-5 py-3">
+              <Link href="/" className="flex shrink-0 items-center gap-2.5 no-underline">
+                <LogoMark />
+                <span className="text-[15px] font-semibold tracking-tight">Yesser</span>
+              </Link>
+              <NavLinks
+                items={items}
+                menuLabel={messages.ui.menu}
+                closeLabel={messages.ui.close}
+                languageSwitcher={languageSwitcher()}
+                mobileFooter={
+                  <div className="mt-3 border-t border-line pt-3">
+                    <p className="truncate text-sm font-semibold">{profile.full_name}</p>
+                    <p className="mb-3 text-xs text-muted">{messages.terms[profile.role]}</p>
+                    {signOutButton("ghost w-full", true)}
+                  </div>
+                }
+              />
+            </div>
+          </div>
+        </header>
+        <main className="mx-auto w-full max-w-7xl flex-1 px-5 py-8 md:px-8 md:py-10 print:max-w-none print:px-0 print:py-0">{children}</main>
+      </div>
     </div>
   );
 }

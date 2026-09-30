@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { ConfirmSubmit } from "@/components/client";
 import { ExpenseForm } from "@/components/record-forms";
 import { Banner, Disclosure, EmptyRow, PageHeader, Pagination, TableCard, coupleName } from "@/components/ui";
+import { deleteExpense } from "@/lib/actions";
 import { requireAdmin } from "@/lib/auth";
 import { PAGE_SIZE, formatDate, one } from "@/lib/constants";
-import { getMessages } from "@/lib/i18n";
+import { fill, getMessages } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
 import { formatTnd } from "@/lib/money";
 import { weddingOptions } from "@/lib/queries";
@@ -16,7 +18,7 @@ export async function generateMetadata() {
 export default async function ExpensesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; notice?: string; page?: string }>;
+  searchParams: Promise<{ error?: string; notice?: string; page?: string; edit?: string }>;
 }) {
   await requireAdmin();
   const locale = await getLocale();
@@ -25,22 +27,36 @@ export default async function ExpensesPage({
   const page = Math.max(1, Number(params.page) || 1);
   const from = (page - 1) * PAGE_SIZE;
   const supabase = await createClient();
-  const [expenses, options] = await Promise.all([
+  const returnTo = page > 1 ? `/expenses?page=${page}` : "/expenses";
+  const editHref = (id: string) => (page > 1 ? `/expenses?page=${page}&edit=${id}#expense-editor` : `/expenses?edit=${id}#expense-editor`);
+  const [expenses, options, editingExpense] = await Promise.all([
     supabase
       .from("expenses")
       .select("id, category, amount_millimes, spent_on, note, wedding_id, weddings(clients(partner_one_name, partner_two_name))", { count: "exact" })
       .order("spent_on", { ascending: false })
       .range(from, from + PAGE_SIZE - 1),
     weddingOptions(supabase, locale, messages.common.wedding),
+    params.edit
+      ? supabase.from("expenses").select("id, category, amount_millimes, spent_on, note, wedding_id").eq("id", params.edit).maybeSingle()
+      : Promise.resolve({ data: null }),
   ]);
+  const editing = editingExpense.data;
 
   return (
     <div>
       <PageHeader title={messages.expenses.title} subtitle={messages.expenses.subtitle} />
       <Banner error={params.error} notice={params.notice} />
-      <Disclosure label={messages.expenses.newExpense} open={Boolean(params.error)}>
-        <ExpenseForm weddings={options} />
+      <div id="expense-editor">
+      <Disclosure label={editing ? messages.expenses.edit : messages.expenses.newExpense} open={Boolean(params.error) || Boolean(editing)}>
+        <ExpenseForm
+          key={editing?.id ?? "new"}
+          weddings={options}
+          expense={editing ?? undefined}
+          returnTo={returnTo}
+          cancelHref={editing ? returnTo : undefined}
+        />
       </Disclosure>
+      </div>
       <TableCard>
         <table>
           <thead>
@@ -49,6 +65,7 @@ export default async function ExpensesPage({
               <th>{messages.expenses.category}</th>
               <th>{messages.expenses.amount}</th>
               <th>{messages.expenses.wedding}</th>
+              <th />
             </tr>
           </thead>
           <tbody>
@@ -69,10 +86,24 @@ export default async function ExpensesPage({
                       <span className="text-muted">{messages.common.studio}</span>
                     )}
                   </td>
+                  <td>
+                    <span className="flex items-center justify-end gap-2">
+                      <Link href={editHref(expense.id)} className="text-sm">
+                        {messages.common.edit}
+                      </Link>
+                      <form action={deleteExpense}>
+                        <input type="hidden" name="id" value={expense.id} />
+                        <input type="hidden" name="return_to" value={returnTo} />
+                        <ConfirmSubmit message={fill(messages.expenses.deleteConfirm, { name: expense.category })}>
+                          {messages.common.delete}
+                        </ConfirmSubmit>
+                      </form>
+                    </span>
+                  </td>
                 </tr>
               );
             })}
-            {(expenses.data ?? []).length === 0 ? <EmptyRow colSpan={4}>{messages.expenses.empty}</EmptyRow> : null}
+            {(expenses.data ?? []).length === 0 ? <EmptyRow colSpan={5}>{messages.expenses.empty}</EmptyRow> : null}
           </tbody>
         </table>
       </TableCard>

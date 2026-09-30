@@ -296,9 +296,8 @@ export function LanguageSwitcher(props: { locale: Locale; label: string; classNa
 }
 
 function navClass(active: boolean) {
-  return `rounded-full px-3.5 py-2 text-sm font-medium whitespace-nowrap no-underline transition-colors ${
-    active ? "bg-ink text-white" : "text-muted hover:text-ink"
-  }`;
+  const tone = active ? "bg-ink text-white" : "text-muted hover:bg-canvas hover:text-ink";
+  return `flex w-full items-center rounded-full px-3.5 py-2.5 text-sm font-medium no-underline transition-colors ${tone}`;
 }
 
 export function NavLinks({
@@ -307,14 +306,14 @@ export function NavLinks({
   menuLabel,
   closeLabel,
   languageSwitcher,
-  desktopExtra,
+  layout = "mobile",
 }: {
   items: { href: string; label: string }[];
   mobileFooter?: React.ReactNode;
-  menuLabel: string;
-  closeLabel: string;
+  menuLabel?: string;
+  closeLabel?: string;
   languageSwitcher?: React.ReactNode;
-  desktopExtra?: React.ReactNode;
+  layout?: "sidebar" | "mobile";
 }) {
   const pathname = usePathname();
   const [openedOn, setOpenedOn] = useState<string | null>(null);
@@ -326,33 +325,34 @@ export function NavLinks({
     return pathname === href || pathname.startsWith(`${href}/`);
   };
 
-  const links = (stacked: boolean) =>
-    items.map((link) => {
-      const active = isActive(link.href);
-      return (
-        <Link
-          key={link.href}
-          href={link.href}
-          prefetch={false}
-          aria-current={active ? "page" : undefined}
-          className={stacked ? `${navClass(active)} ${active ? "" : "hover:bg-canvas"}` : navClass(active)}
-        >
-          {link.label}
-        </Link>
-      );
-    });
+  const links = items.map((link) => {
+    const active = isActive(link.href);
+    return (
+      <Link
+        key={link.href}
+        href={link.href}
+        prefetch={false}
+        aria-current={active ? "page" : undefined}
+        className={navClass(active)}
+      >
+        {link.label}
+      </Link>
+    );
+  });
+
+  if (layout === "sidebar") {
+    return (
+      <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3 pb-4">{links}</nav>
+    );
+  }
 
   return (
     <>
-      <nav className="hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto md:flex [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {links(false)}
-      </nav>
-      <div className="ml-auto flex shrink-0 items-center gap-2 md:ml-0">
+      <div className="ml-auto flex shrink-0 items-center gap-2">
         {languageSwitcher}
-        <div className="hidden md:block">{desktopExtra}</div>
         <button
           type="button"
-          className="ghost md:hidden"
+          className="ghost"
           aria-expanded={open}
           aria-controls="studio-nav"
           onClick={() => setOpenedOn(open ? null : pathname)}
@@ -361,8 +361,8 @@ export function NavLinks({
         </button>
       </div>
       {open ? (
-        <nav id="studio-nav" className="absolute inset-x-0 top-full z-30 flex flex-col gap-1 border-b border-line bg-surface px-4 py-3 md:hidden">
-          {links(true)}
+        <nav id="studio-nav" className="absolute inset-x-0 top-full z-30 flex flex-col gap-1 border-b border-line bg-surface px-4 py-3">
+          {links}
           {mobileFooter}
         </nav>
       ) : null}
