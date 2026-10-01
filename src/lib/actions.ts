@@ -10,6 +10,7 @@ import { rateToBps } from "@/lib/money";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import {
+  assignmentUpdateSchema,
   assignSchema,
   clientSchema,
   convertSchema,
@@ -18,6 +19,8 @@ import {
   leadSchema,
   loginSchema,
   markPaidSchema,
+  memberLoginSchema,
+  memberLoginUpdateSchema,
   memberSchema,
   memberUpdateSchema,
   noteSchema,
@@ -69,6 +72,17 @@ function returnTo(formData: FormData, fallback: string) {
 
 function emptyToNull(value: string | undefined | null) {
   return value ? value : null;
+}
+
+function loginCreateError(error: { code?: string; message?: string } | null) {
+  const code = error?.code ?? "";
+  const message = error?.message ?? "";
+  if (code === "email_exists" || /already been registered/i.test(message)) return "email_taken";
+  if (code === "weak_password" || /at least \d+ characters/i.test(message)) return "err_password";
+  if (/longer than 72/i.test(message)) return "password_too_long";
+  if (code === "over_request_rate_limit" || /rate limit/i.test(message)) return "too_many_attempts";
+  if (code === "validation_failed" && /email/i.test(message)) return "err_email";
+  return "create_login_failed";
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -843,6 +857,32 @@ export async function saveInvoice(formData: FormData) {
   redirect(`/invoices/${data}`);
 }
 
+export async function deleteWedding(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const back = `/weddings/${id}`;
+  if (!UUID.test(id)) fail("/weddings", "delete_wedding_failed");
+  const supabase = await createClient();
+  const { data: wedding } = await supabase.from("weddings").select("id").eq("id", id).maybeSingle();
+  if (!wedding) fail("/weddings", "delete_wedding_failed");
+  const { data: files } = await supabase.from("files").select("storage_path").eq("wedding_id", id);
+  const paths = (files ?? []).map((file) => file.storage_path);
+  if (paths.length > 0) {
+    const { error: storageError } = await supabase.storage.from("studio-files").remove(paths);
+    if (storageError) fail(back, "delete_wedding_failed");
+  }
+  const { error: invoiceError } = await supabase.from("invoices").delete().eq("wedding_id", id);
+  if (invoiceError) fail(back, "delete_wedding_failed");
+  const { error } = await supabase.from("weddings").delete().eq("id", id);
+  if (error) fail(back, "delete_wedding_failed");
+  revalidatePath("/weddings");
+  revalidatePath("/calendar");
+  revalidatePath("/payments");
+  revalidatePath("/clients");
+  revalidatePath("/");
+  done("/weddings", "wedding_deleted");
+}
+
 export async function saveContract(formData: FormData) {
   await requireAdmin();
   const weddingId = String(formData.get("wedding_id") ?? "");
@@ -1013,7 +1053,70 @@ export async function assignMember(formData: FormData) {
   if (payError) fail(back, "assign_pay_failed");
   revalidatePath(back);
   revalidatePath("/team");
+  revalidatePath(`/team/${parsed.data.member_id}`);
   done(back, "member_assigned");
+}
+
+export async function updateAssignment(formData: FormData) {
+  await requireAdmin();
+  const weddingId = String(formData.get("wedding_id") ?? "");
+  const back = `/weddings/${weddingId}`;
+  const parsed = parseForm(assignmentUpdateSchema, formData);
+  if ("error" in parsed) fail(back, parsed.error);
+  const nextId = parsed.data.member_id;
+  const previousId = parsed.data.previous_member_id;
+  const supabase = await createClient();
+  const { data: member } = await supabase.from("profiles").select("job").eq("id", nextId).maybeSingle();
+  const role = parsed.data.role_on_day || member?.job || "photographer";
+  const { data: existingPay } = await supabase
+    .from("assignment_pay")
+    .select("amount_millimes, paid_at")
+    .eq("wedding_id", weddingId)
+    .eq("member_id", previousId)
+    .maybeSingle();
+  const amount = parsed.data.pay ?? existingPay?.amount_millimes ?? 0;
+
+  if (nextId !== previousId) {
+    const { data: clash } = await supabase
+      .from("wedding_assignments")
+      .select("member_id")
+      .eq("wedding_id", weddingId)
+      .eq("member_id", nextId)
+      .maybeSingle();
+    if (clash) fail(back, "already_assigned");
+    const { error: deleteError } = await supabase
+      .from("wedding_assignments")
+      .delete()
+      .eq("wedding_id", weddingId)
+      .eq("member_id", previousId);
+    if (deleteError) fail(back, "assign_failed");
+    const { error } = await supabase.from("wedding_assignments").insert({
+      wedding_id: weddingId,
+      member_id: nextId,
+      role_on_day: role,
+    });
+    if (error) fail(back, "assign_failed");
+  } else {
+    const { error } = await supabase
+      .from("wedding_assignments")
+      .update({ role_on_day: role })
+      .eq("wedding_id", weddingId)
+      .eq("member_id", previousId);
+    if (error) fail(back, "assign_failed");
+  }
+
+  const { error: payError } = await supabase.from("assignment_pay").upsert({
+    wedding_id: weddingId,
+    member_id: nextId,
+    amount_millimes: amount,
+    paid_at: existingPay?.paid_at ?? null,
+  });
+  if (payError) fail(back, "assign_pay_failed");
+  revalidatePath(back);
+  revalidatePath("/team");
+  revalidatePath(`/team/${previousId}`);
+  revalidatePath(`/team/${nextId}`);
+  done(back, "assignment_saved");
 }
 
 export async function unassignMember(formData: FormData) {
@@ -1040,14 +1143,22 @@ export async function setCrewPaid(formData: FormData) {
   const paid = formData.get("paid") === "true";
   const back = returnTo(formData, `/weddings/${weddingId}`);
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data: existingPay } = await supabase
     .from("assignment_pay")
-    .update({ paid_at: paid ? todayInTunis() : null })
+    .select("amount_millimes")
     .eq("wedding_id", weddingId)
-    .eq("member_id", memberId);
+    .eq("member_id", memberId)
+    .maybeSingle();
+  const { error } = await supabase.from("assignment_pay").upsert({
+    wedding_id: weddingId,
+    member_id: memberId,
+    amount_millimes: existingPay?.amount_millimes ?? 0,
+    paid_at: paid ? todayInTunis() : null,
+  });
   if (error) fail(back, "pay_update_failed");
   revalidatePath(`/weddings/${weddingId}`);
   revalidatePath("/team");
+  revalidatePath(`/team/${memberId}`);
   revalidatePath("/");
   done(back, paid ? "marked_paid" : "marked_unpaid");
 }
@@ -1168,7 +1279,10 @@ export async function createMember(formData: FormData) {
       password: parsed.data.password,
       email_confirm: true,
     });
-    if (error || !data.user) fail("/team", "create_login_failed");
+    if (error || !data.user) {
+      console.error("createUser failed:", error?.code, error?.status, error?.message);
+      fail("/team", loginCreateError(error));
+    }
     const { error: profileError } = await admin
       .from("profiles")
       .insert({ id: data.user.id, has_login: true, ...details });
@@ -1223,40 +1337,113 @@ export async function updateMember(formData: FormData) {
   done(back, "member_saved");
 }
 
-export async function deleteMember(formData: FormData) {
+export async function grantMemberLogin(formData: FormData) {
   await requireAdmin();
   const id = String(formData.get("id") ?? "");
-  const supabase = await createClient();
-  const { data: member } = await supabase
+  const back = `/team/${id}`;
+  const parsed = parseForm(memberLoginSchema, formData);
+  if ("error" in parsed) fail(back, parsed.error);
+  const admin = createAdminClient();
+  const { data: member } = await admin
     .from("profiles")
-    .select("role, has_login")
+    .select("id, has_login")
+    .eq("id", parsed.data.id)
+    .maybeSingle();
+  if (!member) fail("/team", "member_missing");
+  const { data: existing } = await admin.auth.admin.getUserById(member.id);
+  if (existing.user) fail(back, "already_has_login");
+  const { data, error } = await admin.auth.admin.createUser({
+    id: member.id,
+    email: parsed.data.email,
+    password: parsed.data.password,
+    email_confirm: true,
+  });
+  if (error || !data.user || data.user.id !== member.id) {
+    if (data.user && data.user.id !== member.id) await admin.auth.admin.deleteUser(data.user.id);
+    console.error("grantMemberLogin failed:", error?.code, error?.message);
+    fail(back, loginCreateError(error));
+  }
+  const { error: profileError } = await admin.from("profiles").update({ has_login: true }).eq("id", member.id);
+  if (profileError) {
+    await admin.auth.admin.deleteUser(data.user.id);
+    fail(back, "save_profile_failed");
+  }
+  revalidatePath("/team");
+  revalidatePath(back);
+  done(back, "login_added");
+}
+
+export async function updateMemberLogin(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const back = `/team/${id}`;
+  const parsed = parseForm(memberLoginUpdateSchema, formData);
+  if ("error" in parsed) fail(back, parsed.error);
+  const admin = createAdminClient();
+  const { data: existing, error: lookupError } = await admin.auth.admin.getUserById(parsed.data.id);
+  if (lookupError || !existing.user) fail(back, "login_missing");
+  const attributes: { email: string; password?: string; email_confirm: boolean } = {
+    email: parsed.data.email,
+    email_confirm: true,
+  };
+  if (parsed.data.password) attributes.password = parsed.data.password;
+  const { error } = await admin.auth.admin.updateUserById(parsed.data.id, attributes);
+  if (error) {
+    console.error("updateMemberLogin failed:", error.code, error.message);
+    fail(back, loginCreateError(error));
+  }
+  const { error: profileError } = await admin.from("profiles").update({ has_login: true }).eq("id", parsed.data.id);
+  if (profileError) fail(back, "save_profile_failed");
+  revalidatePath("/team");
+  revalidatePath(back);
+  done(back, "login_saved");
+}
+
+export async function deleteMember(formData: FormData) {
+  const current = await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const back = `/team/${id}`;
+  if (!UUID.test(id)) fail("/team", "member_missing");
+  if (id === current.id) fail(back, "cannot_delete_self");
+  const admin = createAdminClient();
+  const { data: member } = await admin
+    .from("profiles")
+    .select("id, has_login")
     .eq("id", id)
     .maybeSingle();
-  if (!member || member.role === "admin" || member.has_login) {
-    fail(`/team/${id}`, "login_not_deletable");
+  if (!member) fail("/team", "member_missing");
+  if (member.has_login) {
+    const { error: authError } = await admin.auth.admin.deleteUser(id);
+    const missing = authError?.status === 404 || authError?.code === "user_not_found";
+    if (authError && !missing) {
+      console.error("deleteMember auth failed:", authError.code, authError.message);
+      fail(back, "delete_member_failed");
+    }
   }
-  const { error } = await supabase.from("profiles").delete().eq("id", id);
-  if (error) fail(`/team/${id}`, "delete_member_failed");
+  const { error } = await admin.from("profiles").delete().eq("id", id);
+  if (error) fail(back, "delete_member_failed");
   revalidatePath("/team");
   done("/team", "member_deleted");
 }
 
 export async function setMemberActive(formData: FormData) {
-  await requireAdmin();
+  const current = await requireAdmin();
   const id = String(formData.get("id") ?? "");
   const active = String(formData.get("active") ?? "") === "true";
+  const back = returnTo(formData, `/team/${id}`);
+  if (id === current.id) fail(back, "cannot_change_self");
   const supabase = await createClient();
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("id")
     .eq("id", id)
     .maybeSingle();
-  if (!profile || profile.role === "admin") fail("/team", "account_locked");
+  if (!profile) fail("/team", "member_missing");
   const { error } = await supabase.from("profiles").update({ active }).eq("id", id);
-  if (error) fail("/team", "update_member_failed");
+  if (error) fail(back, "update_member_failed");
   revalidatePath("/team");
   revalidatePath(`/team/${id}`);
-  done(returnTo(formData, "/team"), active ? "member_activated" : "member_deactivated");
+  done(back, active ? "member_activated" : "member_deactivated");
 }
 
 export async function setLocale(formData: FormData) {

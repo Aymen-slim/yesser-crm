@@ -12,13 +12,14 @@ import {
   Section,
   StatCard,
 } from "@/components/ui";
-import { deleteMember, setCrewPaid, setMemberActive, updateMember } from "@/lib/actions";
+import { deleteMember, grantMemberLogin, setCrewPaid, setMemberActive, updateMember, updateMemberLogin } from "@/lib/actions";
 import { requireAdmin } from "@/lib/auth";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { formatDate, monthRange, one, todayInTunis } from "@/lib/constants";
 import { fill, getMessages } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
 import { formatTnd } from "@/lib/money";
-import { crewJobs, parseMonth, payTotals } from "@/lib/queries";
+import { memberJobs, parseMonth, payTotals } from "@/lib/queries";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function TeamMemberPage({
@@ -28,7 +29,7 @@ export default async function TeamMemberPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ error?: string; notice?: string; month?: string }>;
 }) {
-  await requireAdmin();
+  const profile = await requireAdmin();
   const locale = await getLocale();
   const messages = getMessages(locale);
   const { id } = await params;
@@ -38,17 +39,23 @@ export default async function TeamMemberPage({
   const range = monthRange(month.year, month.month);
   const supabase = await createClient();
 
-  const [{ data: member }, jobsByMember] = await Promise.all([
+  const [{ data: member }, jobs] = await Promise.all([
     supabase
       .from("profiles")
       .select("id, full_name, phone, role, active, job, instagram, has_login, member_rates(rate_millimes)")
       .eq("id", id)
       .maybeSingle(),
-    crewJobs(supabase, range, id, messages.common.wedding),
+    memberJobs(supabase, range, id, messages.common.wedding),
   ]);
   if (!member) notFound();
 
-  const jobs = jobsByMember.get(id) ?? [];
+  let loginEmail = "";
+  if (member.has_login) {
+    const admin = createAdminClient();
+    const { data } = await admin.auth.admin.getUserById(member.id);
+    loginEmail = data.user?.email ?? "";
+  }
+  const isSelf = profile.id === member.id;
   const pay = payTotals(jobs);
   const rate = one(member.member_rates as { rate_millimes: number } | { rate_millimes: number }[] | null)?.rate_millimes ?? 0;
   const here = `/team/${id}${month.key === thisMonth ? "" : `?month=${month.key}`}`;
@@ -143,31 +150,59 @@ export default async function TeamMemberPage({
             </form>
           </Section>
 
-          {member.role === "admin" ? null : (
-            <Section title={messages.team.account}>
-              <div className="flex flex-wrap gap-2">
-                <form action={setMemberActive}>
-                  <input type="hidden" name="id" value={member.id} />
-                  <input type="hidden" name="active" value={member.active ? "false" : "true"} />
-                  <input type="hidden" name="return_to" value={`/team/${id}`} />
-                  <SubmitButton className="ghost" pendingLabel="…">
-                    {member.active ? messages.team.deactivate : messages.team.activate}
-                  </SubmitButton>
-                </form>
-                {member.has_login ? null : (
+          <Section title={messages.team.account}>
+            {loginEmail ? (
+              <form action={updateMemberLogin} autoComplete="off" className="grid gap-4">
+                <input type="hidden" name="id" value={member.id} />
+                <Field label={messages.team.email}>
+                  <input name="email" type="email" defaultValue={loginEmail} required autoComplete="off" />
+                </Field>
+                <Field label={messages.team.newPassword}>
+                  <input name="password" type="password" autoComplete="new-password" placeholder={messages.team.passwordKeep} />
+                </Field>
+                <SubmitButton className="self-start" pendingLabel={messages.common.saving}>
+                  {messages.team.saveLogin}
+                </SubmitButton>
+              </form>
+            ) : (
+              <form action={grantMemberLogin} autoComplete="off" className="grid gap-4">
+                <input type="hidden" name="id" value={member.id} />
+                <p className="text-xs text-muted">{messages.team.createLoginHint}</p>
+                <Field label={messages.team.email}>
+                  <input name="email" type="email" required autoComplete="off" />
+                </Field>
+                <Field label={messages.team.password}>
+                  <input name="password" type="password" required minLength={8} autoComplete="new-password" />
+                </Field>
+                <SubmitButton className="self-start" pendingLabel={messages.common.saving}>
+                  {messages.team.createLogin}
+                </SubmitButton>
+              </form>
+            )}
+            {isSelf ? null : (
+              <div className="mt-4 border-t border-line pt-4">
+                <div className="flex flex-wrap gap-2">
+                  <form action={setMemberActive}>
+                    <input type="hidden" name="id" value={member.id} />
+                    <input type="hidden" name="active" value={member.active ? "false" : "true"} />
+                    <input type="hidden" name="return_to" value={`/team/${id}`} />
+                    <SubmitButton className="ghost" pendingLabel="…">
+                      {member.active ? messages.team.deactivate : messages.team.activate}
+                    </SubmitButton>
+                  </form>
                   <form action={deleteMember}>
                     <input type="hidden" name="id" value={member.id} />
                     <ConfirmSubmit message={fill(messages.team.deleteConfirm, { name: member.full_name })}>
                       {messages.common.delete}
                     </ConfirmSubmit>
                   </form>
-                )}
+                </div>
+                <p className="mt-3 text-xs text-muted">
+                  {member.has_login ? messages.team.loginNote : messages.team.inactiveNote}
+                </p>
               </div>
-              <p className="mt-3 text-xs text-muted">
-                {member.has_login ? messages.team.loginNote : messages.team.inactiveNote}
-              </p>
-            </Section>
-          )}
+            )}
+          </Section>
         </div>
       </div>
     </div>

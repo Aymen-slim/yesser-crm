@@ -212,8 +212,9 @@ export const contractSchema = z.object({
   client_names: contractText(200),
   contact: contractText(200),
   address: contractText(240),
-  event_date: contractText(80),
-  places: contractText(400),
+  event_date: contractText(800),
+  places: contractText(2000),
+  schedule: contractText(8000),
   start_time: contractText(20),
   end_time: contractText(20),
   preparations: contractText(400),
@@ -222,6 +223,15 @@ export const contractSchema = z.object({
     .trim()
     .default("")
     .refine((value) => value === "" || value === "1" || value === "2" || value === "3", "err_form"),
+  pack1_name: contractText(120),
+  pack1_lines: contractText(1500),
+  pack1_price: contractText(40),
+  pack2_name: contractText(120),
+  pack2_lines: contractText(1500),
+  pack2_price: contractText(40),
+  pack3_name: contractText(120),
+  pack3_lines: contractText(1500),
+  pack3_price: contractText(40),
   extras: contractText(500),
   total: contractText(40),
   deposit: contractText(40),
@@ -246,6 +256,14 @@ export const invoiceSchema = z.object({
 export const assignSchema = z.object({
   wedding_id: z.string().uuid(),
   member_id: z.string().uuid("err_member"),
+  role_on_day: z.string().trim().max(60).default(""),
+  pay: optionalMoney,
+});
+
+export const assignmentUpdateSchema = z.object({
+  wedding_id: z.string().uuid(),
+  member_id: z.string().uuid("err_member"),
+  previous_member_id: z.string().uuid(),
   role_on_day: z.string().trim().max(60).default(""),
   pay: optionalMoney,
 });
@@ -295,6 +313,22 @@ export const memberUpdateSchema = z.object({
   phone: phone.or(z.literal("")).default(""),
   rate: optionalMoney,
 });
+
+export const memberLoginSchema = z.object({
+  id: z.string().uuid(),
+  email: z.string().trim().email("err_email"),
+  password: z.string().min(8, "err_password").max(72, "password_too_long"),
+});
+
+export const memberLoginUpdateSchema = z
+  .object({
+    id: z.string().uuid(),
+    email: z.string().trim().email("err_email"),
+    password: z.string().max(72, "password_too_long").default(""),
+  })
+  .refine((data) => !data.password || data.password.length >= 8, {
+    message: "err_password",
+  });
 
 export const loginSchema = z.object({
   email: z.string().trim().email("err_email"),

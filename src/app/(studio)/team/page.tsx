@@ -68,7 +68,7 @@ export default async function TeamPage({
       </div>
 
       <Disclosure label={messages.team.addMember} open={Boolean(params.error)}>
-        <form action={createMember} className="grid gap-4 pb-5 md:grid-cols-2">
+        <form action={createMember} autoComplete="off" className="grid gap-4 pb-5 md:grid-cols-2">
           <Field label={messages.team.name}>
             <input name="full_name" required />
           </Field>

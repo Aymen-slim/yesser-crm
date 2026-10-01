@@ -52,6 +52,43 @@ export async function crewJobs(
   return byMember;
 }
 
+export async function memberJobs(
+  supabase: Supabase,
+  range: { start: string; end: string },
+  memberId: string,
+  unnamed = "Wedding",
+) {
+  const { data } = await supabase
+    .from("wedding_assignments")
+    .select(
+      "member_id, role_on_day, weddings!inner(id, wedding_date, status, clients(partner_one_name, partner_two_name)), assignment_pay(amount_millimes, paid_at)",
+    )
+    .eq("member_id", memberId)
+    .neq("weddings.status", "cancelled");
+
+  const jobs: CrewJob[] = [];
+  for (const row of data ?? []) {
+    const wedding = one(row.weddings as unknown as { id: string; wedding_date: string; clients: ClientName | ClientName[] | null });
+    if (!wedding) continue;
+    const client = one(wedding.clients);
+    const pay = one(row.assignment_pay as unknown as { amount_millimes: number; paid_at: string | null } | null);
+    const paidAt = pay?.paid_at ?? null;
+    const workedThen = wedding.wedding_date >= range.start && wedding.wedding_date < range.end;
+    const paidThen = Boolean(paidAt && paidAt >= range.start && paidAt < range.end);
+    if (!workedThen && !paidThen) continue;
+    jobs.push({
+      weddingId: wedding.id,
+      weddingDate: wedding.wedding_date,
+      couple: client ? (client.partner_two_name ? `${client.partner_one_name} & ${client.partner_two_name}` : client.partner_one_name) : unnamed,
+      role: row.role_on_day,
+      pay: pay?.amount_millimes ?? 0,
+      paidAt,
+    });
+  }
+  jobs.sort((a, b) => a.weddingDate.localeCompare(b.weddingDate));
+  return jobs;
+}
+
 export function payTotals(jobs: CrewJob[]) {
   const total = jobs.reduce((sum, job) => sum + job.pay, 0);
   const paid = jobs.filter((job) => job.paidAt).reduce((sum, job) => sum + job.pay, 0);

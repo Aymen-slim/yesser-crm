@@ -2,45 +2,7 @@
 
 import { useState } from "react";
 import { useFormStatus } from "react-dom";
-import type { ContractBlanks } from "@/lib/contract";
-
-const PACKS = [
-  {
-    id: "1",
-    name: "PACK 1 — ESSENTIAL",
-    choice: "Pack 1 — Essential",
-    price: "3 500 DT",
-    lines: [
-      "Préparatifs · Shooting extérieur · Couverture photo complète du mariage ·",
-      "500+ photos retouchées HD · Vidéo clip cinématique (2–3 min) · Galerie en",
-      "ligne privée · Mini Photobook",
-    ],
-  },
-  {
-    id: "2",
-    name: "PACK 2 — SIGNATURE",
-    choice: "Pack 2 — Signature",
-    price: "4 500 DT",
-    lines: [
-      "Préparatifs · Shooting extérieur · Couverture photo complète du mariage ·",
-      "800+ photos retouchées HD · Vidéo clip cinématique (2–3 min) · Vidéo Reel ·",
-      "Vidéo continue documentaire de la soirée · Galerie en ligne privée · Tirage de",
-      "50 photos · Photobook",
-    ],
-  },
-  {
-    id: "3",
-    name: "PACK 3 — PREMIUM",
-    choice: "Pack 3 — Premium",
-    price: "5 500 DT",
-    lines: [
-      "Shooting extérieur · Préparatifs · Couverture photo complète du mariage ·",
-      "Photos illimitées retouchées HD · Vidéo clip cinématique (2–3 min) · 2 Vidéos",
-      "Reel · Vidéo continue documentaire (2 Cam) · Vidéo Guest Messages ·",
-      "Galerie en ligne privée · Tirage de 100 photos · Photobook Luxe",
-    ],
-  },
-] as const;
+import { CONTRACT_PACKS, encodeSchedule, parseSchedule, type ContractBlanks, type ScheduleRow } from "@/lib/contract";
 
 export function YesserContract({
   weddingId,
@@ -52,7 +14,11 @@ export function YesserContract({
   saveAction: (formData: FormData) => void | Promise<void>;
 }) {
   const [fields, setFields] = useState(initial);
+  const [rows, setRows] = useState<ScheduleRow[]>(() => parseSchedule(initial.schedule));
   const set = (key: keyof ContractBlanks) => (value: string) => setFields((current) => ({ ...current, [key]: value }));
+  const schedule = encodeSchedule(rows);
+  const eventDate = rows.map((row) => row.date.trim()).filter(Boolean).join(" · ");
+  const placeList = rows.map((row) => row.place.trim()).filter(Boolean).join(" · ");
 
   return (
     <form id="yesser-contract" action={saveAction}>
@@ -78,7 +44,17 @@ export function YesserContract({
           line-height: 1.2;
           padding: 0 2px;
         }
-        .yesser-contract input.blank:focus { outline: 1px solid #111; outline-offset: 1px; }
+        .yesser-contract input.blank:focus, .yesser-contract textarea.cell:focus, .yesser-contract input.cell:focus { outline: 1px solid #111; outline-offset: 1px; }
+        .yesser-contract textarea.cell, .yesser-contract input.cell {
+          all: unset;
+          display: block;
+          box-sizing: border-box;
+          width: 100%;
+          font: inherit;
+          color: #000;
+          white-space: pre-wrap;
+          resize: none;
+        }
         .yesser-contract table { width: 100%; border-collapse: collapse; margin: 8px 0 10px; font-size: 11px; }
         .yesser-contract th, .yesser-contract td {
           border: 1px solid #808080;
@@ -108,12 +84,24 @@ export function YesserContract({
           border-bottom: 1px solid #000;
         }
         .yesser-contract .page-two { break-before: page; }
+        .yesser-contract button {
+          all: unset;
+          cursor: pointer;
+          font: inherit;
+          font-size: 11px;
+          text-decoration: underline;
+        }
+        .yesser-contract button:disabled { opacity: 0.35; cursor: default; text-decoration: none; }
         @media print {
-          .yesser-contract input.blank:focus { outline: none; }
+          .yesser-contract input.blank:focus, .yesser-contract textarea.cell:focus, .yesser-contract input.cell:focus { outline: none; }
+          .yesser-contract .no-print { display: none; }
         }
       `}</style>
       <article className="yesser-contract mx-auto max-w-[210mm] bg-white px-[16mm] py-[14mm] text-black shadow-[0_8px_30px_rgba(0,0,0,0.06)] print:max-w-none print:px-0 print:py-0 print:shadow-none">
         <input type="hidden" name="wedding_id" value={weddingId} />
+        <input type="hidden" name="schedule" value={schedule} />
+        <input type="hidden" name="event_date" value={eventDate.slice(0, 800)} />
+        <input type="hidden" name="places" value={placeList.slice(0, 2000)} />
         {fields.pack === "" ? <input type="hidden" name="pack" value="" /> : null}
 
         <header className="mb-4 text-center">
@@ -148,10 +136,58 @@ export function YesserContract({
           Le présent contrat définit les conditions dans lesquelles le Prestataire réalise les prestations de photographie et/ou de vidéographie du mariage des Clients, selon le forfait choisi et les éventuelles prestations supplémentaires indiquées au présent contrat.
         </p>
 
-        <h2>3. DATE, LIEUX ET HORAIRES</h2>
-        <p>
-          Date : <Blank name="event_date" value={fields.event_date} onChange={set("event_date")} size={22} maxLength={80} /> Lieu(x) :{" "}
-          <Blank name="places" value={fields.places} onChange={set("places")} size={36} maxLength={400} />
+        <h2>3. DATES, LIEUX ET HORAIRES</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Lieu</th>
+              <th className="no-print w-8" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={index}>
+                <td>
+                  <input
+                    className="cell"
+                    value={row.date}
+                    maxLength={120}
+                    aria-label="Date"
+                    onChange={(event) =>
+                      setRows((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, date: event.target.value } : item)))
+                    }
+                  />
+                </td>
+                <td>
+                  <input
+                    className="cell"
+                    value={row.place}
+                    maxLength={240}
+                    aria-label="Lieu"
+                    onChange={(event) =>
+                      setRows((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, place: event.target.value } : item)))
+                    }
+                  />
+                </td>
+                <td className="no-print">
+                  <button
+                    type="button"
+                    className="ghost"
+                    disabled={rows.length === 1}
+                    onClick={() => setRows((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                  >
+                    ×
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="no-print">
+          <button type="button" className="ghost" onClick={() => setRows((current) => [...current, { date: "", place: "" }])}>
+            Ajouter une date et un lieu
+          </button>
         </p>
         <p>
           Heure de début : <Blank name="start_time" value={fields.start_time} onChange={set("start_time")} size={10} maxLength={20} /> Heure de fin :{" "}
@@ -174,24 +210,29 @@ export function YesserContract({
             </tr>
           </thead>
           <tbody>
-            {PACKS.map((pack) => (
-              <tr key={pack.id}>
-                <td className="pack-name">{pack.name}</td>
-                <td>
-                  {pack.lines.map((line) => (
-                    <span key={line} className="block">
-                      {line}
-                    </span>
-                  ))}
-                </td>
-                <td className="pack-price">{pack.price}</td>
-              </tr>
-            ))}
+            {CONTRACT_PACKS.map((pack) => {
+              const nameKey = `pack${pack.id}_name` as const;
+              const linesKey = `pack${pack.id}_lines` as const;
+              const priceKey = `pack${pack.id}_price` as const;
+              return (
+                <tr key={pack.id}>
+                  <td className="pack-name">
+                    <textarea className="cell" name={nameKey} rows={2} maxLength={120} value={fields[nameKey]} onChange={(event) => set(nameKey)(event.target.value)} />
+                  </td>
+                  <td>
+                    <textarea className="cell" name={linesKey} rows={4} maxLength={1500} value={fields[linesKey]} onChange={(event) => set(linesKey)(event.target.value)} />
+                  </td>
+                  <td className="pack-price">
+                    <input className="cell" name={priceKey} maxLength={40} value={fields[priceKey]} onChange={(event) => set(priceKey)(event.target.value)} />
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         <p>
           Forfait choisi :{" "}
-          {PACKS.map((pack) => (
+          {CONTRACT_PACKS.map((pack) => (
             <label key={pack.id} className="mr-3 inline-flex items-center">
               <input
                 type="radio"

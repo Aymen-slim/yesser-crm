@@ -14,7 +14,7 @@ import {
   WeddingPlaceForm,
 } from "@/components/record-forms";
 import { Badge, Banner, Card, Disclosure, EmptyState, PageHeader, Section, StatusBadge, coupleName } from "@/components/ui";
-import { addWeddingExtra, deletePayment, deleteTask, deleteWeddingFile, removeWeddingDay, removeWeddingExtra, removeWeddingPlace, resetWeddingFeatures, saveWeddingFeatures, saveWeddingOffer, setCrewPaid, unassignMember, updateWeddingExtra } from "@/lib/actions";
+import { addWeddingExtra, deletePayment, deleteTask, deleteWedding, deleteWeddingFile, removeWeddingDay, removeWeddingExtra, removeWeddingPlace, resetWeddingFeatures, saveWeddingFeatures, saveWeddingOffer, setCrewPaid, unassignMember, updateAssignment, updateWeddingExtra } from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
 import { formatDate, one, todayInTunis } from "@/lib/constants";
 import { fill, getMessages } from "@/lib/i18n";
@@ -122,9 +122,15 @@ export default async function WeddingPage({
         }
         action={
           admin ? (
-            <Link href={`/weddings/${id}/contract`} className="button no-underline">
-              {messages.contract.open}
-            </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link href={`/weddings/${id}/contract`} className="button no-underline">
+                {messages.contract.open}
+              </Link>
+              <form action={deleteWedding}>
+                <input type="hidden" name="id" value={id} />
+                <ConfirmSubmit message={messages.weddings.deleteConfirm}>{messages.weddings.delete}</ConfirmSubmit>
+              </form>
+            </div>
           ) : null
         }
       />
@@ -547,40 +553,65 @@ export default async function WeddingPage({
               <ul className="divide-y divide-line text-sm">
                 {(assignments.data ?? []).map((row) => {
                   const pay = one(row.assignment_pay as { amount_millimes: number; paid_at: string | null } | { amount_millimes: number; paid_at: string | null }[] | null);
+                  const name = one(row.profiles)?.full_name ?? messages.common.teamMember;
+                  const people = members.data ?? [];
+                  const choices = people.some((person) => person.id === row.member_id) ? people : [{ id: row.member_id, full_name: name }, ...people];
                   return (
-                    <li key={row.member_id} className="py-2.5 first:pt-0">
-                      <div className="flex items-center justify-between gap-2">
-                        {admin ? (
-                          <Link href={`/team/${row.member_id}`} className="font-medium">
-                            {one(row.profiles)?.full_name}
-                          </Link>
-                        ) : (
-                          <span className="font-medium">{one(row.profiles)?.full_name}</span>
-                        )}
-                        <Badge>{row.role_on_day}</Badge>
-                      </div>
+                    <li key={row.member_id} className="py-3 first:pt-0">
                       {admin ? (
-                        <div className="mt-1 flex items-center justify-between gap-2">
-                          <span className={`text-xs ${pay?.paid_at ? "text-ink" : "text-muted"}`}>
-                            {formatTnd(pay?.amount_millimes ?? 0)} · {pay?.paid_at ? messages.common.paid : messages.common.notPaid}
-                          </span>
-                          <span className="flex items-center">
-                            <form action={setCrewPaid}>
-                              <input type="hidden" name="wedding_id" value={id} />
-                              <input type="hidden" name="member_id" value={row.member_id} />
-                              <input type="hidden" name="paid" value={pay?.paid_at ? "false" : "true"} />
-                              <SubmitButton className="ghost !px-2 !py-1 !text-xs" pendingLabel="…">
-                                {pay?.paid_at ? messages.common.undo : messages.weddings.markPaid}
-                              </SubmitButton>
-                            </form>
-                            <form action={unassignMember}>
-                              <input type="hidden" name="wedding_id" value={id} />
-                              <input type="hidden" name="member_id" value={row.member_id} />
-                              <ConfirmSubmit message={fill(messages.weddings.removePerson, { name: one(row.profiles)?.full_name ?? messages.common.teamMember })}>
-                                {messages.common.remove}
-                              </ConfirmSubmit>
-                            </form>
-                          </span>
+                        <form action={updateAssignment} className="grid gap-2">
+                          <Link href={`/team/${row.member_id}`} className="text-xs font-medium">
+                            {name}
+                          </Link>
+                          <input type="hidden" name="wedding_id" value={id} />
+                          <input type="hidden" name="previous_member_id" value={row.member_id} />
+                          <select name="member_id" defaultValue={row.member_id} aria-label={messages.common.teamMember}>
+                            {choices.map((person) => (
+                              <option key={person.id} value={person.id}>
+                                {person.full_name}
+                              </option>
+                            ))}
+                          </select>
+                          <input name="role_on_day" defaultValue={row.role_on_day} placeholder={messages.forms.roleHint} aria-label={messages.forms.roleAria} />
+                          <input
+                            name="pay"
+                            inputMode="decimal"
+                            defaultValue={pay ? (pay.amount_millimes / 1000).toFixed(3) : ""}
+                            placeholder={messages.forms.payHint}
+                            aria-label={messages.forms.payAria}
+                          />
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className={`text-xs ${pay?.paid_at ? "text-ink" : "text-muted"}`}>
+                              {pay?.paid_at ? fill(messages.common.paidOn, { date: formatDate(pay.paid_at, locale) }) : messages.common.notPaid}
+                            </span>
+                            <SubmitButton className="ghost !px-2 !py-1 !text-xs" pendingLabel={messages.common.saving}>
+                              {messages.common.save}
+                            </SubmitButton>
+                          </div>
+                        </form>
+                      ) : (
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium">{name}</span>
+                          <Badge>{row.role_on_day}</Badge>
+                        </div>
+                      )}
+                      {admin ? (
+                        <div className="mt-1 flex items-center justify-end">
+                          <form action={setCrewPaid}>
+                            <input type="hidden" name="wedding_id" value={id} />
+                            <input type="hidden" name="member_id" value={row.member_id} />
+                            <input type="hidden" name="paid" value={pay?.paid_at ? "false" : "true"} />
+                            <SubmitButton className="ghost !px-2 !py-1 !text-xs" pendingLabel="…">
+                              {pay?.paid_at ? messages.common.undo : messages.weddings.markPaid}
+                            </SubmitButton>
+                          </form>
+                          <form action={unassignMember}>
+                            <input type="hidden" name="wedding_id" value={id} />
+                            <input type="hidden" name="member_id" value={row.member_id} />
+                            <ConfirmSubmit message={fill(messages.weddings.removePerson, { name })}>
+                              {messages.common.remove}
+                            </ConfirmSubmit>
+                          </form>
                         </div>
                       ) : null}
                     </li>
