@@ -195,6 +195,7 @@ export async function saveLead(formData: FormData) {
     partner_one_name: parsed.data.partner_one_name,
     partner_two_name: parsed.data.partner_two_name,
     phone: parsed.data.phone,
+    whatsapp_phone: emptyToNull(parsed.data.whatsapp_phone),
     email: emptyToNull(parsed.data.email),
     source: parsed.data.source,
     city: parsed.data.city,
@@ -270,6 +271,7 @@ export async function saveClient(formData: FormData) {
     partner_one_name: parsed.data.partner_one_name,
     partner_two_name: parsed.data.partner_two_name,
     phone: parsed.data.phone,
+    whatsapp_phone: emptyToNull(parsed.data.whatsapp_phone),
     email: emptyToNull(parsed.data.email),
     city: parsed.data.city,
   };
@@ -1190,6 +1192,7 @@ export async function quickBook(formData: FormData) {
     p_partner_one_name: parsed.data.partner_one_name,
     p_partner_two_name: parsed.data.partner_two_name,
     p_phone: parsed.data.phone,
+    p_whatsapp_phone: emptyToNull(parsed.data.whatsapp_phone),
     p_wedding_date: parsed.data.wedding_date,
     p_venue_name: parsed.data.venue_name,
     p_total_millimes: parsed.data.total ?? 0,

@@ -7,6 +7,42 @@ import { useState } from "react";
 import { useFormStatus } from "react-dom";
 import { setLocale } from "@/lib/actions";
 import type { Locale } from "@/lib/i18n";
+import { normalizePhone } from "@/lib/constants";
+
+export function PhoneInput({
+  name,
+  defaultValue,
+  required = false,
+  error,
+}: {
+  name: string;
+  defaultValue?: string | null;
+  required?: boolean;
+  error: string;
+}) {
+  return (
+    <input
+      name={name}
+      type="tel"
+      inputMode="tel"
+      autoComplete={name === "phone" ? "tel" : "off"}
+      placeholder="+216 20123456 / +33 612345678"
+      defaultValue={defaultValue ?? ""}
+      required={required}
+      maxLength={40}
+      title={error}
+      onInput={(event) => {
+        const input = event.currentTarget;
+        input.setCustomValidity(input.value.trim() && !normalizePhone(input.value) ? error : "");
+      }}
+      onBlur={(event) => {
+        const input = event.currentTarget;
+        const number = normalizePhone(input.value);
+        if (number) input.value = number;
+      }}
+    />
+  );
+}
 
 export function PrintButton({ label }: { label: string }) {
   return (
@@ -24,10 +60,10 @@ export function MonthJump({ month, add, label }: { month: string; add: string | 
       aria-label={label}
       defaultValue={month}
       key={month}
-      className="w-40"
+      className="min-h-11 min-w-0"
       onChange={(event) => {
         const value = event.target.value;
-        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(value)) return;
+        if (!/^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(value)) return;
         const params = new URLSearchParams({ month: value });
         if (add && add.startsWith(`${value}-`)) params.set("add", add);
         router.push(`/calendar?${params}`);

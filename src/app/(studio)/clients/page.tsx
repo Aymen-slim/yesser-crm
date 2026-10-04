@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ClientForm, LeadForm } from "@/components/record-forms";
 import {
   Banner,
+  ContactLinks,
   Disclosure,
   EmptyRow,
   Field,
@@ -16,6 +17,7 @@ import { requireAdmin } from "@/lib/auth";
 import { PAGE_SIZE, formatDate } from "@/lib/constants";
 import { fill, getMessages, term } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
+import { getWhatsappPhones } from "@/lib/supabase/contacts";
 import { createClient } from "@/lib/supabase/server";
 
 export async function generateMetadata() {
@@ -25,6 +27,24 @@ export async function generateMetadata() {
 const TABS = ["leads", "booked", "lost"] as const;
 const OPEN_LEAD_STATUSES = ["new", "contacted", "quote_sent"];
 const NIL = "00000000-0000-0000-0000-000000000000";
+
+type ClientRow = {
+  id: string;
+  partner_one_name: string;
+  partner_two_name: string;
+  phone: string;
+  email: string | null;
+  city: string;
+  weddings: { wedding_date: string }[] | null;
+};
+
+type CoupleFilterQuery = {
+  or(filters: string): unknown;
+  ilike(column: string, pattern: string): unknown;
+  gte(column: string, value: string): unknown;
+  lte(column: string, value: string): unknown;
+  in(column: string, values: readonly string[]): unknown;
+};
 
 function searchText(value: string | undefined) {
   return (value ?? "")
@@ -76,21 +96,23 @@ export default async function CouplesPage({
     cityIds = [...new Set((placed.data ?? []).map((row) => row.client_id))];
   }
 
-  const filterLeads = (query: any) => {
-    if (q) query = query.or(`partner_one_name.ilike.${likePattern(q)},partner_two_name.ilike.${likePattern(q)}`);
-    if (city) query = query.ilike("city", `%${city}%`);
-    if (from) query = query.gte("wedding_date", from);
-    if (to) query = query.lte("wedding_date", to);
+  const filterLeads = <T,>(query: T) => {
+    const builder = query as CoupleFilterQuery;
+    if (q) builder.or(`partner_one_name.ilike.${likePattern(q)},partner_two_name.ilike.${likePattern(q)}`);
+    if (city) builder.ilike("city", `%${city}%`);
+    if (from) builder.gte("wedding_date", from);
+    if (to) builder.lte("wedding_date", to);
     return query;
   };
 
-  const filterClients = (query: any) => {
-    if (q) query = query.or(`partner_one_name.ilike.${likePattern(q)},partner_two_name.ilike.${likePattern(q)}`);
-    if (dateIds) query = query.in("id", dateIds.length ? dateIds : [NIL]);
+  const filterClients = <T,>(query: T) => {
+    const builder = query as CoupleFilterQuery;
+    if (q) builder.or(`partner_one_name.ilike.${likePattern(q)},partner_two_name.ilike.${likePattern(q)}`);
+    if (dateIds) builder.in("id", dateIds.length ? dateIds : [NIL]);
     if (city) {
       const parts = [`city.ilike.${likePattern(city)}`];
       if (cityIds.length) parts.push(`id.in.(${cityIds.join(",")})`);
-      query = query.or(parts.join(","));
+      builder.or(parts.join(","));
     }
     return query;
   };
@@ -105,7 +127,7 @@ export default async function CouplesPage({
       .order("created_at", { ascending: false })
       .range(fromRow, fromRow + PAGE_SIZE - 1);
 
-  const skip = Promise.resolve({ data: null, count: 0 });
+  const skip = Promise.resolve({ data: null, error: null, count: 0 });
   const [clients, leads, packages, leadCount, bookedCount, lostCount] = await Promise.all([
     tab === "booked"
       ? filterClients(
@@ -115,6 +137,7 @@ export default async function CouplesPage({
         )
           .order("created_at", { ascending: false })
           .range(fromRow, fromRow + PAGE_SIZE - 1)
+          .overrideTypes<ClientRow[], { merge: false }>()
       : skip,
     tab === "booked" ? skip : leadsQuery(tab === "lost" ? ["lost"] : OPEN_LEAD_STATUSES),
     tab === "leads" ? supabase.from("packages").select("id, name").eq("active", true).order("name") : Promise.resolve({ data: [] }),
@@ -123,15 +146,12 @@ export default async function CouplesPage({
     filterLeads(supabase.from("leads").select("id", { count: "exact", head: true }).eq("status", "lost")),
   ]);
 
-  const clientRows = (clients.data ?? []) as {
-    id: string;
-    partner_one_name: string;
-    partner_two_name: string;
-    phone: string;
-    email: string | null;
-    city: string;
-    weddings: { wedding_date: string }[] | null;
-  }[];
+  const lookupError = clients.error ?? leads.error;
+  if (lookupError) {
+    console.error("Couples lookup failed:", lookupError.code);
+    throw new Error("couples_failed");
+  }
+  const clientRows = clients.data ?? [];
   const leadRows = (leads.data ?? []) as {
     id: string;
     partner_one_name: string;
@@ -142,6 +162,11 @@ export default async function CouplesPage({
     wedding_date: string | null;
     city: string;
   }[];
+  const whatsappPhones = await getWhatsappPhones(
+    supabase,
+    tab === "booked" ? "clients" : "leads",
+    (tab === "booked" ? clientRows : leadRows).map((row) => row.id),
+  );
   const total = (tab === "booked" ? clients.count : leads.count) ?? 0;
   const hrefFor = (value: (typeof TABS)[number]) => {
     const search = new URLSearchParams({ tab: value });
@@ -223,7 +248,7 @@ export default async function CouplesPage({
                       </Link>
                       {client.email ? <span className="block text-xs text-muted">{client.email}</span> : null}
                     </td>
-                    <td className="whitespace-nowrap">{client.phone}</td>
+                    <td className="whitespace-nowrap"><ContactLinks phone={client.phone} whatsappPhone={whatsappPhones.get(client.id)} /></td>
                     <td>{client.city || "—"}</td>
                     <td className="whitespace-nowrap">{formatDate(dates[dates.length - 1], locale)}</td>
                   </tr>
@@ -252,7 +277,7 @@ export default async function CouplesPage({
                     </Link>
                     {lead.city ? <span className="block text-xs text-muted">{lead.city}</span> : null}
                   </td>
-                  <td className="whitespace-nowrap">{lead.phone}</td>
+                  <td className="whitespace-nowrap"><ContactLinks phone={lead.phone} whatsappPhone={whatsappPhones.get(lead.id)} /></td>
                   <td>{term(messages, lead.source)}</td>
                   <td className="whitespace-nowrap">{formatDate(lead.wedding_date, locale)}</td>
                   <td>

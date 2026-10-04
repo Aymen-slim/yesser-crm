@@ -57,6 +57,18 @@ export const TASK_STATUSES = ["todo", "doing", "done"] as const;
 
 export const PAGE_SIZE = 20;
 
+export function normalizePhone(value: string): string | null {
+  const text = value.trim();
+  if (text.length > 40 || !/^\+?[0-9\s().-]+$/.test(text)) return null;
+  let number = text.replace(/[\s().-]/g, "");
+  if (number.startsWith("00")) number = `+${number.slice(2)}`;
+  if (/^[2-9]\d{7}$/.test(number)) number = `+216${number}`;
+  if (/^216[2-9]\d{7}$/.test(number)) number = `+${number}`;
+  if (!/^\+[1-9]\d{6,14}$/.test(number)) return null;
+  if (number.startsWith("+216") && !/^\+216[2-9]\d{7}$/.test(number)) return null;
+  return number;
+}
+
 export function labelize(value: string): string {
   const text = value.replaceAll("_", " ");
   return text.charAt(0).toUpperCase() + text.slice(1);
@@ -123,6 +135,12 @@ export function last12Months(locale: "en" | "fr" = "en") {
     months.push({ key, label, year: y, month: m });
   }
   return months;
+}
+
+export function isIsoDate(value: string): boolean {
+  if (!/^[1-9]\d{3}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  return day <= new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
 export function monthRange(year: number, month: number) {

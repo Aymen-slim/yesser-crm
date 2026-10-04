@@ -13,13 +13,14 @@ import {
   WeddingForm,
   WeddingPlaceForm,
 } from "@/components/record-forms";
-import { Badge, Banner, Card, Disclosure, EmptyState, PageHeader, Section, StatusBadge, coupleName } from "@/components/ui";
+import { Badge, Banner, Card, ContactLinks, Disclosure, EmptyState, PageHeader, Section, StatusBadge, coupleName } from "@/components/ui";
 import { addWeddingExtra, deletePayment, deleteTask, deleteWedding, deleteWeddingFile, removeWeddingDay, removeWeddingExtra, removeWeddingPlace, resetWeddingFeatures, saveWeddingFeatures, saveWeddingOffer, setCrewPaid, unassignMember, updateAssignment, updateWeddingExtra } from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
 import { formatDate, one, todayInTunis } from "@/lib/constants";
 import { fill, getMessages } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
 import { formatTnd } from "@/lib/money";
+import { getWhatsappPhones } from "@/lib/supabase/contacts";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function WeddingPage({
@@ -38,11 +39,15 @@ export default async function WeddingPage({
   const today = todayInTunis();
   const supabase = await createClient();
 
-  const { data: wedding } = await supabase
+  const { data: wedding, error: weddingError } = await supabase
     .from("weddings")
     .select("*, clients(id, partner_one_name, partner_two_name, phone), packages(name, features)")
     .eq("id", id)
     .maybeSingle();
+  if (weddingError) {
+    console.error("Wedding lookup failed:", weddingError.code);
+    throw new Error("wedding_failed");
+  }
   if (!wedding) notFound();
 
   const skip = Promise.resolve({ data: [] });
@@ -52,7 +57,7 @@ export default async function WeddingPage({
     .eq("wedding_id", id)
     .order("created_at");
   if (!admin) taskQuery = taskQuery.eq("assignee_id", profile.id);
-  const [sameDay, sameExtraDay, tasks, notes, assignments, files, payments, clients, packages, members, extras, weddingExtras, days, places] = await Promise.all([
+  const [sameDay, sameExtraDay, tasks, notes, assignments, files, payments, clients, packages, members, extras, weddingExtras, days, places, whatsappPhones] = await Promise.all([
     supabase.from("weddings").select("id").eq("wedding_date", wedding.wedding_date).neq("id", id).neq("status", "cancelled"),
     supabase
       .from("wedding_days")
@@ -76,6 +81,7 @@ export default async function WeddingPage({
     admin ? supabase.from("wedding_extras").select("id, name, price_millimes").eq("wedding_id", id).order("created_at") : skip,
     supabase.from("wedding_days").select("id, day_date, start_time, label").eq("wedding_id", id).order("day_date"),
     supabase.from("wedding_locations").select("id, label, venue_name, city, location_url").eq("wedding_id", id).order("created_at"),
+    getWhatsappPhones(supabase, "clients", [wedding.client_id]),
   ]);
 
   const signed = await Promise.all(
@@ -177,7 +183,8 @@ export default async function WeddingPage({
         <Fact label={messages.weddings.couple}>
           {client ? (
             <>
-              {admin ? <Link href={`/clients/${client.id}`}>{client.phone}</Link> : client.phone}
+              <ContactLinks phone={client.phone} whatsappPhone={whatsappPhones.get(client.id)} />
+              {admin ? <Link href={`/clients/${client.id}`} className="mt-1 block text-xs">{messages.couples.details}</Link> : null}
             </>
           ) : (
             "—"

@@ -1,7 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { fill, getMessages, isLocale, type Locale } from "@/lib/i18n";
+
+function subscribeLocale(onChange: () => void) {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["lang"] });
+  return () => observer.disconnect();
+}
+
+function localeSnapshot(): Locale {
+  const lang = document.documentElement.lang;
+  return isLocale(lang) ? lang : "en";
+}
 
 export default function StudioError({
   error,
@@ -10,11 +21,9 @@ export default function StudioError({
   error: Error & { digest?: string };
   retry: () => void;
 }) {
-  const [locale, setLocale] = useState<Locale>("en");
+  const locale = useSyncExternalStore(subscribeLocale, localeSnapshot, () => "en" as const);
   useEffect(() => {
     console.error(error);
-    const lang = document.documentElement.lang;
-    if (isLocale(lang)) setLocale(lang);
   }, [error]);
   const messages = getMessages(locale);
 

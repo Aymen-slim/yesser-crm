@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ConvertForm, LeadForm, NoteForm } from "@/components/record-forms";
-import { Banner, EmptyState, PageHeader, Section, StatusBadge, coupleName } from "@/components/ui";
+import { Banner, ContactLinks, EmptyState, PageHeader, Section, StatusBadge, coupleName } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { formatDate } from "@/lib/constants";
 import { fill, getMessages } from "@/lib/i18n";
@@ -44,7 +44,7 @@ export default async function LeadPage({
         subtitle={
           <span className="flex flex-wrap items-center gap-2">
             <StatusBadge status={lead.status} />
-            <span>{lead.phone}</span>
+            <ContactLinks phone={lead.phone} whatsappPhone={lead.whatsapp_phone} />
             {lead.wedding_date ? <span>· {fill(messages.lead.weddingOn, { date: formatDate(lead.wedding_date, locale) })}</span> : null}
           </span>
         }

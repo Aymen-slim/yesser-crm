@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PAGE_SIZE } from "@/lib/constants";
+import { PAGE_SIZE, normalizePhone } from "@/lib/constants";
 import { fill, getMessages, term, translateFlash } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
 
@@ -342,6 +342,21 @@ export function InstagramLink({ handle }: { handle: string }) {
     <a href={`https://instagram.com/${handle}`} target="_blank" rel="noreferrer">
       @{handle}
     </a>
+  );
+}
+
+export function ContactLinks({ phone, whatsappPhone }: { phone: string; whatsappPhone?: string | null }) {
+  const number = normalizePhone(phone);
+  const whatsapp = whatsappPhone ? normalizePhone(whatsappPhone) : null;
+  return (
+    <span className="inline-flex flex-col items-start gap-1">
+      {number ? <a href={`tel:${number}`} className="py-1">{phone}</a> : <span>{phone}</span>}
+      {whatsapp ? (
+        <a href={`https://wa.me/${whatsapp.slice(1)}`} target="_blank" rel="noopener noreferrer" className="py-1 text-xs font-medium">
+          WhatsApp · {whatsappPhone}
+        </a>
+      ) : null}
+    </span>
   );
 }
 

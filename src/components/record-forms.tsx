@@ -27,7 +27,7 @@ import {
   WEDDING_STATUSES,
   todayInTunis,
 } from "@/lib/constants";
-import { LineList, SubmitButton } from "@/components/client";
+import { LineList, PhoneInput, SubmitButton } from "@/components/client";
 import { Field } from "@/components/ui";
 import { fill, getMessages, term, type Messages } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
@@ -55,6 +55,27 @@ function FormActions({ children }: { children: React.ReactNode }) {
   return <div className="flex flex-wrap items-center gap-4 md:col-span-2">{children}</div>;
 }
 
+function CouplePhoneFields({
+  contact,
+  messages,
+}: {
+  contact?: { phone: string; whatsapp_phone?: string | null };
+  messages: Messages;
+}) {
+  return (
+    <>
+      <Field label={messages.forms.phone}>
+        <PhoneInput name="phone" defaultValue={contact?.phone} error={messages.flash.err_phone} required />
+        <span className="text-xs text-muted">{messages.forms.phoneHint}</span>
+      </Field>
+      <Field label={messages.forms.whatsappPhone}>
+        <PhoneInput name="whatsapp_phone" defaultValue={contact?.whatsapp_phone} error={messages.flash.err_phone} />
+        <span className="text-xs text-muted">{messages.forms.whatsappHint}</span>
+      </Field>
+    </>
+  );
+}
+
 async function BookAnyway() {
   const f = (await copy()).forms;
   return (
@@ -74,6 +95,7 @@ export async function LeadForm({
     partner_one_name: string;
     partner_two_name: string;
     phone: string;
+    whatsapp_phone?: string | null;
     email: string | null;
     source: string;
     city: string;
@@ -95,9 +117,7 @@ export async function LeadForm({
       <Field label={f.partnerTwo}>
         <input name="partner_two_name" defaultValue={lead?.partner_two_name} />
       </Field>
-      <Field label={f.phone}>
-        <input name="phone" type="tel" placeholder="+216 20123456" defaultValue={lead?.phone} required />
-      </Field>
+      <CouplePhoneFields contact={lead} messages={messages} />
       <Field label={f.email}>
         <input name="email" type="email" defaultValue={lead?.email ?? ""} />
       </Field>
@@ -213,14 +233,12 @@ export async function QuickBookForm({ date }: { date: string }) {
         <input name="wedding_date" type="date" defaultValue={date} required />
       </Field>
       <Field label={f.partnerOne}>
-        <input name="partner_one_name" required autoFocus />
+        <input name="partner_one_name" required />
       </Field>
       <Field label={f.partnerTwo}>
         <input name="partner_two_name" />
       </Field>
-      <Field label={f.phone}>
-        <input name="phone" type="tel" placeholder="+216 20123456" required />
-      </Field>
+      <CouplePhoneFields messages={messages} />
       <Field label={f.venue}>
         <input name="venue_name" />
       </Field>
@@ -243,6 +261,7 @@ export async function ClientForm({
     partner_one_name: string;
     partner_two_name: string;
     phone: string;
+    whatsapp_phone?: string | null;
     email: string | null;
     city: string;
   };
@@ -258,9 +277,7 @@ export async function ClientForm({
       <Field label={f.partnerTwo}>
         <input name="partner_two_name" defaultValue={client?.partner_two_name} />
       </Field>
-      <Field label={f.phone}>
-        <input name="phone" type="tel" placeholder="+216 20123456" defaultValue={client?.phone} required />
-      </Field>
+      <CouplePhoneFields contact={client} messages={messages} />
       <Field label={f.email}>
         <input name="email" type="email" defaultValue={client?.email ?? ""} />
       </Field>

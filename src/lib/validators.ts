@@ -6,13 +6,18 @@ import {
   PAYMENT_METHODS,
   TASK_STATUSES,
   WEDDING_STATUSES,
+  normalizePhone,
+  isIsoDate,
 } from "@/lib/constants";
 import { tndToMillimes } from "@/lib/money";
 
 const phone = z
   .string()
   .trim()
-  .regex(/^(\+216\s?)?[2-9]\d{7}$/, "err_phone");
+  .refine((value) => normalizePhone(value) !== null, "err_phone")
+  .transform((value) => normalizePhone(value) ?? value);
+
+const optionalPhone = phone.or(z.string().trim().length(0, "err_phone")).default("");
 
 const optionalEmail = z
   .string()
@@ -73,7 +78,8 @@ export const quickBookSchema = z.object({
   partner_one_name: z.string().trim().min(1, "err_partner"),
   partner_two_name: z.string().trim().default(""),
   phone,
-  wedding_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "err_date"),
+  whatsapp_phone: optionalPhone,
+  wedding_date: z.string().refine(isIsoDate, "err_date"),
   venue_name: z.string().trim().default(""),
   total: optionalMoney,
 });
@@ -82,6 +88,7 @@ export const leadSchema = z.object({
   partner_one_name: z.string().trim().min(1, "err_partner"),
   partner_two_name: z.string().trim().default(""),
   phone,
+  whatsapp_phone: optionalPhone,
   email: optionalEmail,
   source: z.enum(LEAD_SOURCES),
   city: z.string().trim().default(""),
@@ -95,6 +102,7 @@ export const clientSchema = z.object({
   partner_one_name: z.string().trim().min(1, "err_partner"),
   partner_two_name: z.string().trim().default(""),
   phone,
+  whatsapp_phone: optionalPhone,
   email: optionalEmail,
   city: z.string().trim().default(""),
 });

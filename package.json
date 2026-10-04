@@ -10,6 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --test scripts/feature-regressions.test.mjs",
     "clear-demo": "node scripts/clear-demo.mjs"
   },
   "dependencies": {

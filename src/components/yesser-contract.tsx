@@ -55,6 +55,12 @@ export function YesserContract({
           white-space: pre-wrap;
           resize: none;
         }
+        .yesser-contract .pack-table { table-layout: fixed; }
+        .yesser-contract .pack-table th:first-child { width: 28%; }
+        .yesser-contract .auto-cell { position: relative; min-width: 0; }
+        .yesser-contract .cell-size { display: block; visibility: hidden; min-height: 1.35em; white-space: pre-wrap; overflow-wrap: anywhere; }
+        .yesser-contract .cell-size::after { content: " "; white-space: pre; }
+        .yesser-contract .auto-cell textarea.cell { position: absolute; inset: 0; height: 100%; min-height: 0; overflow: hidden; overflow-wrap: anywhere; line-height: 1.35; }
         .yesser-contract table { width: 100%; border-collapse: collapse; margin: 8px 0 10px; font-size: 11px; }
         .yesser-contract th, .yesser-contract td {
           border: 1px solid #808080;
@@ -92,12 +98,17 @@ export function YesserContract({
           text-decoration: underline;
         }
         .yesser-contract button:disabled { opacity: 0.35; cursor: default; text-decoration: none; }
+        @page { size: A4; margin: 0; }
         @media print {
+          .yesser-contract { padding: 14mm 16mm; }
+          .yesser-contract .page-two { padding-top: 14mm; }
           .yesser-contract input.blank:focus, .yesser-contract textarea.cell:focus, .yesser-contract input.cell:focus { outline: none; }
-          .yesser-contract .no-print { display: none; }
+          .yesser-contract .no-print, .yesser-contract .auto-cell textarea.cell { display: none; }
+          .yesser-contract .cell-size { visibility: visible; }
+          .yesser-contract tr { break-inside: avoid; }
         }
       `}</style>
-      <article className="yesser-contract mx-auto max-w-[210mm] bg-white px-[16mm] py-[14mm] text-black shadow-[0_8px_30px_rgba(0,0,0,0.06)] print:max-w-none print:px-0 print:py-0 print:shadow-none">
+      <article className="yesser-contract mx-auto max-w-[210mm] bg-white px-4 py-6 text-black sm:px-[16mm] sm:py-[14mm] shadow-[0_8px_30px_rgba(0,0,0,0.06)] print:max-w-none print:px-0 print:py-0 print:shadow-none">
         <input type="hidden" name="wedding_id" value={weddingId} />
         <input type="hidden" name="schedule" value={schedule} />
         <input type="hidden" name="event_date" value={eventDate.slice(0, 800)} />
@@ -201,7 +212,7 @@ export function YesserContract({
         </p>
 
         <h2>4. FORFAIT CHOISI</h2>
-        <table>
+        <table className="pack-table">
           <thead>
             <tr>
               <th>Forfait</th>
@@ -217,13 +228,13 @@ export function YesserContract({
               return (
                 <tr key={pack.id}>
                   <td className="pack-name">
-                    <textarea className="cell" name={nameKey} rows={2} maxLength={120} value={fields[nameKey]} onChange={(event) => set(nameKey)(event.target.value)} />
+                    <AutoCell name={nameKey} label={`Forfait ${pack.id}`} maxLength={120} value={fields[nameKey]} onChange={set(nameKey)} />
                   </td>
                   <td>
-                    <textarea className="cell" name={linesKey} rows={4} maxLength={1500} value={fields[linesKey]} onChange={(event) => set(linesKey)(event.target.value)} />
+                    <AutoCell name={linesKey} label={`Prestations du forfait ${pack.id}`} maxLength={1500} value={fields[linesKey]} onChange={set(linesKey)} />
                   </td>
                   <td className="pack-price">
-                    <input className="cell" name={priceKey} maxLength={40} value={fields[priceKey]} onChange={(event) => set(priceKey)(event.target.value)} />
+                    <AutoCell name={priceKey} label={`Tarif du forfait ${pack.id}`} maxLength={40} value={fields[priceKey]} onChange={set(priceKey)} />
                   </td>
                 </tr>
               );
@@ -328,6 +339,27 @@ export function YesserContract({
         </div>
       </article>
     </form>
+  );
+}
+
+function AutoCell({
+  name,
+  label,
+  value,
+  onChange,
+  maxLength,
+}: {
+  name: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  maxLength: number;
+}) {
+  return (
+    <div className="auto-cell">
+      <span className="cell-size" aria-hidden="true">{value || " "}</span>
+      <textarea className="cell" name={name} aria-label={label} rows={1} maxLength={maxLength} value={value} onChange={(event) => onChange(event.target.value)} />
+    </div>
   );
 }
 

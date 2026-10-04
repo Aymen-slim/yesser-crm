@@ -111,6 +111,7 @@ export default async function WeddingContractPage({
         <Banner error={error} notice={notice} />
         <p className="mb-6 text-sm text-muted">
           Le texte juridique reste celui du modèle. Les dates, les lieux, le forfait, les prestations et le tarif se modifient directement ici, puis enregistrez.
+          Pour un PDF sans adresse du site, désactivez « En-têtes et pieds de page » dans les options d’impression si votre navigateur les ajoute.
         </p>
       </div>
       <YesserContract key={`${saved.data?.updated_at ?? "default"}:${notice ?? ""}`} weddingId={id} initial={fields} saveAction={saveContract} />

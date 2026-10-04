@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ConfirmSubmit } from "@/components/client";
 import { ClientForm } from "@/components/record-forms";
-import { Banner, EmptyState, PageHeader, Section, StatusBadge, coupleName } from "@/components/ui";
+import { Banner, ContactLinks, EmptyState, PageHeader, Section, StatusBadge, coupleName } from "@/components/ui";
 import { deleteClient } from "@/lib/actions";
 import { requireAdmin } from "@/lib/auth";
 import { formatDate } from "@/lib/constants";
@@ -34,7 +34,12 @@ export default async function ClientPage({
       <PageHeader
         back={{ href: "/clients?tab=booked", label: messages.nav.couples }}
         title={coupleName(client.partner_one_name, client.partner_two_name)}
-        subtitle={[client.phone, client.email, client.city].filter(Boolean).join(" · ")}
+        subtitle={
+          <span className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <ContactLinks phone={client.phone} whatsappPhone={client.whatsapp_phone} />
+            <span>{[client.email, client.city].filter(Boolean).join(" · ")}</span>
+          </span>
+        }
       />
       <Banner error={error} notice={notice} />
       <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
