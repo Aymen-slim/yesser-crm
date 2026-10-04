@@ -13,7 +13,7 @@ import {
   coupleName,
 } from "@/components/ui";
 import { deletePayment } from "@/lib/actions";
-import { requireAdmin } from "@/lib/auth";
+import { requireManager } from "@/lib/auth";
 import { PAGE_SIZE, formatDate, one, todayInTunis } from "@/lib/constants";
 import { fill, getMessages, term } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
@@ -32,7 +32,7 @@ export default async function PaymentsPage({
 }: {
   searchParams: Promise<{ error?: string; notice?: string; page?: string; view?: string; edit?: string }>;
 }) {
-  await requireAdmin();
+  await requireManager();
   const locale = await getLocale();
   const messages = getMessages(locale);
   const params = await searchParams;

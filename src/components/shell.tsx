@@ -1,7 +1,7 @@
 import { NavLinks, LanguageSwitcher } from "@/components/client";
 import { LogoMark } from "@/components/ui";
 import { signOut } from "@/lib/actions";
-import type { Profile } from "@/lib/auth";
+import { canManageCrm, type Profile } from "@/lib/auth";
 import type { Locale, Messages } from "@/lib/i18n";
 import Link from "next/link";
 
@@ -34,7 +34,7 @@ export function Shell({
   children: React.ReactNode;
 }) {
   const items = linkKeys
-    .filter((link) => !link.admin || profile.role === "admin")
+    .filter((link) => (link.href !== "/" || profile.role !== "assistant") && (!link.admin || canManageCrm(profile)))
     .map(({ href, key }) => ({ href, label: messages.nav[key] }));
   const languageSwitcher = () => <LanguageSwitcher locale={locale} label={messages.ui.language} />;
   const signOutButton = (className: string, fullWidth = false) => (
@@ -48,7 +48,7 @@ export function Shell({
   return (
     <div className="min-h-screen md:flex">
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col self-start border-r border-line bg-surface print:hidden md:flex">
-        <Link href="/" className="flex shrink-0 items-center gap-2.5 px-5 py-5 no-underline">
+        <Link href={profile.role === "assistant" ? "/weddings" : "/"} className="flex shrink-0 items-center gap-2.5 px-5 py-5 no-underline">
           <LogoMark />
           <span className="text-[15px] font-semibold tracking-tight">Yesser</span>
         </Link>
@@ -71,7 +71,7 @@ export function Shell({
         <header className="sticky top-0 z-30 print:hidden md:hidden">
           <div className="relative border-b border-line bg-surface">
             <div className="flex items-center gap-3 px-5 py-3">
-              <Link href="/" className="flex shrink-0 items-center gap-2.5 no-underline">
+              <Link href={profile.role === "assistant" ? "/weddings" : "/"} className="flex shrink-0 items-center gap-2.5 no-underline">
                 <LogoMark />
                 <span className="text-[15px] font-semibold tracking-tight">Yesser</span>
               </Link>

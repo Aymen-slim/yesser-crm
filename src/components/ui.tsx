@@ -312,11 +312,13 @@ export async function MonthNav({
   prev,
   next,
   isCurrent,
+  currentHref = path,
 }: {
   path: string;
   prev: string;
   next: string;
   isCurrent: boolean;
+  currentHref?: string;
 }) {
   const messages = getMessages(await getLocale());
   return (
@@ -325,7 +327,7 @@ export async function MonthNav({
         ← {messages.common.previous}
       </Link>
       {isCurrent ? null : (
-        <Link className="button ghost no-underline" href={path} prefetch={false}>
+        <Link className="button ghost no-underline" href={currentHref} prefetch={false}>
           {messages.common.thisMonth}
         </Link>
       )}

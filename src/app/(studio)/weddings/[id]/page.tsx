@@ -15,7 +15,7 @@ import {
 } from "@/components/record-forms";
 import { Badge, Banner, Card, ContactLinks, Disclosure, EmptyState, PageHeader, Section, StatusBadge, coupleName } from "@/components/ui";
 import { addWeddingExtra, deletePayment, deleteTask, deleteWedding, deleteWeddingFile, removeWeddingDay, removeWeddingExtra, removeWeddingPlace, resetWeddingFeatures, saveWeddingFeatures, saveWeddingOffer, setCrewPaid, unassignMember, updateAssignment, updateWeddingExtra } from "@/lib/actions";
-import { requireUser } from "@/lib/auth";
+import { canManageCrm, requireUser } from "@/lib/auth";
 import { formatDate, one, todayInTunis } from "@/lib/constants";
 import { fill, getMessages } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
@@ -35,7 +35,7 @@ export default async function WeddingPage({
   const messages = getMessages(locale);
   const { id } = await params;
   const { error, notice, edit } = await searchParams;
-  const admin = profile.role === "admin";
+  const manager = canManageCrm(profile);
   const today = todayInTunis();
   const supabase = await createClient();
 
@@ -56,7 +56,7 @@ export default async function WeddingPage({
     .select("id, wedding_id, title, due_date, status, assignee_id")
     .eq("wedding_id", id)
     .order("created_at");
-  if (!admin) taskQuery = taskQuery.eq("assignee_id", profile.id);
+  if (!manager) taskQuery = taskQuery.eq("assignee_id", profile.id);
   const [sameDay, sameExtraDay, tasks, notes, assignments, files, payments, clients, packages, members, extras, weddingExtras, days, places, whatsappPhones] = await Promise.all([
     supabase.from("weddings").select("id").eq("wedding_date", wedding.wedding_date).neq("id", id).neq("status", "cancelled"),
     supabase
@@ -71,14 +71,14 @@ export default async function WeddingPage({
       .select("member_id, role_on_day, profiles(full_name, job), assignment_pay(amount_millimes, paid_at)")
       .eq("wedding_id", id),
     supabase.from("files").select("id, file_name, storage_path, created_at").eq("wedding_id", id).order("created_at", { ascending: false }),
-    admin
+    manager
       ? supabase.from("payments").select("id, label, amount_millimes, due_date, paid_at, method, note").eq("wedding_id", id).order("due_date", { nullsFirst: false })
       : skip,
-    admin ? supabase.from("clients").select("id, partner_one_name, partner_two_name").order("partner_one_name") : skip,
-    admin ? supabase.from("packages").select("id, name, price_millimes").order("name") : skip,
+    manager ? supabase.from("clients").select("id, partner_one_name, partner_two_name").order("partner_one_name") : skip,
+    manager ? supabase.from("packages").select("id, name, price_millimes").order("name") : skip,
     supabase.from("profiles").select("id, full_name").eq("active", true).order("full_name"),
-    admin ? supabase.from("extras").select("id, name, price_millimes").eq("active", true).order("name") : skip,
-    admin ? supabase.from("wedding_extras").select("id, name, price_millimes").eq("wedding_id", id).order("created_at") : skip,
+    manager ? supabase.from("extras").select("id, name, price_millimes").eq("active", true).order("name") : skip,
+    manager ? supabase.from("wedding_extras").select("id, name, price_millimes").eq("wedding_id", id).order("created_at") : skip,
     supabase.from("wedding_days").select("id, day_date, start_time, label").eq("wedding_id", id).order("day_date"),
     supabase.from("wedding_locations").select("id, label, venue_name, city, location_url").eq("wedding_id", id).order("created_at"),
     getWhatsappPhones(supabase, "clients", [wedding.client_id]),
@@ -127,7 +127,7 @@ export default async function WeddingPage({
           </span>
         }
         action={
-          admin ? (
+          manager ? (
             <div className="flex flex-wrap items-center gap-2">
               <Link href={`/weddings/${id}/contract`} className="button no-underline">
                 {messages.contract.open}
@@ -184,13 +184,13 @@ export default async function WeddingPage({
           {client ? (
             <>
               <ContactLinks phone={client.phone} whatsappPhone={whatsappPhones.get(client.id)} />
-              {admin ? <Link href={`/clients/${client.id}`} className="mt-1 block text-xs">{messages.couples.details}</Link> : null}
+              {manager ? <Link href={`/clients/${client.id}`} className="mt-1 block text-xs">{messages.couples.details}</Link> : null}
             </>
           ) : (
             "—"
           )}
         </Fact>
-        {admin ? (
+        {manager ? (
           <Fact label={messages.weddings.balance}>
             <span>
               {remaining > 0 ? fill(messages.common.left, { amount: formatTnd(remaining) }) : messages.common.fullyPaid}
@@ -204,7 +204,7 @@ export default async function WeddingPage({
         )}
       </Card>
 
-      {admin ? (
+      {manager ? (
         <Disclosure label={messages.weddings.edit}>
           <WeddingForm wedding={wedding} clients={clients.data ?? []} packages={packages.data ?? []} lockTotal={offerLocked} />
         </Disclosure>
@@ -231,7 +231,7 @@ export default async function WeddingPage({
                       {day.start_time ? <span className="text-muted"> · {day.start_time.slice(0, 5)}</span> : null}
                       {day.label ? <span className="mt-0.5 block text-xs text-muted">{day.label}</span> : null}
                     </span>
-                    {admin ? (
+                    {manager ? (
                       <form action={removeWeddingDay}>
                         <input type="hidden" name="id" value={day.id} />
                         <input type="hidden" name="wedding_id" value={id} />
@@ -242,7 +242,7 @@ export default async function WeddingPage({
                 );
               })}
             </ul>
-            {admin ? (
+            {manager ? (
               <Fold label={messages.weddings.addDay} open={error === "add_day_failed" || error === "day_is_main" || error === "day_exists"}>
                 <WeddingDayForm weddingId={id} />
               </Fold>
@@ -274,7 +274,7 @@ export default async function WeddingPage({
                         </a>
                       ) : null}
                     </span>
-                    {admin ? (
+                    {manager ? (
                       <form action={removeWeddingPlace}>
                         <input type="hidden" name="id" value={spot.id} />
                         <input type="hidden" name="wedding_id" value={id} />
@@ -285,7 +285,7 @@ export default async function WeddingPage({
                 );
               })}
             </ul>
-            {admin ? (
+            {manager ? (
               <Fold label={messages.weddings.addPlace} open={error === "add_place_failed" || error === "err_place"}>
                 <WeddingPlaceForm weddingId={id} />
               </Fold>
@@ -294,13 +294,13 @@ export default async function WeddingPage({
         </div>
       </Section>
 
-      {admin ? null : (
+      {manager ? null : (
         <Section title={messages.weddings.inclusions} className="mb-6">
           <FeatureList lines={included} empty={messages.weddings.noInclusions} />
         </Section>
       )}
 
-      {admin ? (
+      {manager ? (
         <Section title={messages.weddings.offer} className="mb-6">
           <p className="mb-4 text-sm text-muted">{messages.weddings.offerHint}</p>
           <form action={saveWeddingOffer} className="flex flex-col gap-4">
@@ -443,7 +443,7 @@ export default async function WeddingPage({
                       </span>
                       <span className="flex items-center gap-1">
                         <TaskStatusForm task={task} />
-                        {admin ? (
+                        {manager ? (
                           <form action={deleteTask}>
                             <input type="hidden" name="id" value={task.id} />
                             <input type="hidden" name="wedding_id" value={id} />
@@ -456,10 +456,10 @@ export default async function WeddingPage({
                 })}
               </ul>
             )}
-            <TaskForm weddingId={id} members={members.data ?? []} lockedAssignee={admin ? undefined : profile.id} />
+            <TaskForm weddingId={id} members={members.data ?? []} lockedAssignee={manager ? undefined : profile.id} />
           </Section>
 
-          {admin ? (
+          {manager ? (
             <Section
               title={messages.weddings.payments}
               action={
@@ -565,7 +565,7 @@ export default async function WeddingPage({
                   const choices = people.some((person) => person.id === row.member_id) ? people : [{ id: row.member_id, full_name: name }, ...people];
                   return (
                     <li key={row.member_id} className="py-3 first:pt-0">
-                      {admin ? (
+                      {manager ? (
                         <form action={updateAssignment} className="grid gap-2">
                           <Link href={`/team/${row.member_id}`} className="text-xs font-medium">
                             {name}
@@ -602,7 +602,7 @@ export default async function WeddingPage({
                           <Badge>{row.role_on_day}</Badge>
                         </div>
                       )}
-                      {admin ? (
+                      {manager ? (
                         <div className="mt-1 flex items-center justify-end">
                           <form action={setCrewPaid}>
                             <input type="hidden" name="wedding_id" value={id} />
@@ -626,7 +626,7 @@ export default async function WeddingPage({
                 })}
               </ul>
             )}
-            {admin ? <AssignForm weddingId={id} members={members.data ?? []} /> : null}
+            {manager ? <AssignForm weddingId={id} members={members.data ?? []} /> : null}
           </Section>
 
           <Section title={messages.weddings.files}>
@@ -643,7 +643,7 @@ export default async function WeddingPage({
                     ) : (
                       <span className="min-w-0 truncate">{file.file_name}</span>
                     )}
-                    {admin ? (
+                    {manager ? (
                       <form action={deleteWeddingFile}>
                         <input type="hidden" name="id" value={file.id} />
                         <input type="hidden" name="wedding_id" value={id} />

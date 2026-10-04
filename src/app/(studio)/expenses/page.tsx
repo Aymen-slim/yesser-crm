@@ -3,7 +3,7 @@ import { ConfirmSubmit } from "@/components/client";
 import { ExpenseForm } from "@/components/record-forms";
 import { Banner, Disclosure, EmptyRow, PageHeader, Pagination, TableCard, coupleName } from "@/components/ui";
 import { deleteExpense } from "@/lib/actions";
-import { requireAdmin } from "@/lib/auth";
+import { requireManager } from "@/lib/auth";
 import { PAGE_SIZE, formatDate, one } from "@/lib/constants";
 import { fill, getMessages } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
@@ -20,7 +20,7 @@ export default async function ExpensesPage({
 }: {
   searchParams: Promise<{ error?: string; notice?: string; page?: string; edit?: string }>;
 }) {
-  await requireAdmin();
+  await requireManager();
   const locale = await getLocale();
   const messages = getMessages(locale);
   const params = await searchParams;

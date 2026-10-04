@@ -6,6 +6,7 @@ import {
   Disclosure,
   EmptyRow,
   Field,
+  FilterTabs,
   InstagramLink,
   MonthNav,
   PageHeader,
@@ -13,7 +14,7 @@ import {
   TableCard,
 } from "@/components/ui";
 import { createMember } from "@/lib/actions";
-import { requireAdmin } from "@/lib/auth";
+import { requireManager } from "@/lib/auth";
 import { monthRange, one, todayInTunis } from "@/lib/constants";
 import { fill, getMessages } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
@@ -28,17 +29,19 @@ export async function generateMetadata() {
 export default async function TeamPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; notice?: string; month?: string }>;
+  searchParams: Promise<{ error?: string; notice?: string; month?: string; view?: string }>;
 }) {
-  await requireAdmin();
+  const profile = await requireManager();
+  const admin = profile.role === "admin";
   const locale = await getLocale();
   const messages = getMessages(locale);
   const params = await searchParams;
   const thisMonth = todayInTunis().slice(0, 7);
   const month = parseMonth(params.month, thisMonth, locale);
-  const range = monthRange(month.year, month.month);
+  const monthly = params.view === "month" || (params.view !== "all" && Boolean(params.month));
+  const range = monthly ? monthRange(month.year, month.month) : null;
   const supabase = await createClient();
-  const [{ data }, jobs] = await Promise.all([
+  const [{ data, error: teamError }, jobs] = await Promise.all([
     supabase
       .from("profiles")
       .select("id, full_name, phone, role, active, job, instagram, has_login, member_rates(rate_millimes)")
@@ -47,30 +50,49 @@ export default async function TeamPage({
     crewJobs(supabase, range, undefined, messages.common.wedding),
   ]);
 
+  if (teamError) {
+    console.error("Team lookup failed:", teamError.code);
+    throw new Error("team_failed");
+  }
   const allJobs = [...jobs.values()].flat();
   const totals = payTotals(allJobs);
-  const monthQuery = month.key === thisMonth ? "" : `?month=${month.key}`;
+  const monthQuery = monthly ? `?month=${month.key}` : "";
 
   return (
     <div>
       <PageHeader
         title={messages.team.title}
-        subtitle={fill(messages.team.subtitle, { month: month.label })}
-        action={<MonthNav path="/team" prev={month.prev} next={month.next} isCurrent={month.key === thisMonth} />}
+        subtitle={monthly ? fill(messages.team.subtitle, { month: month.label }) : messages.team.subtitleAll}
+        action={monthly ? <MonthNav path="/team" currentHref="/team?view=month" prev={month.prev} next={month.next} isCurrent={month.key === thisMonth} /> : undefined}
       />
       <Banner error={params.error} notice={params.notice} />
+      <FilterTabs
+        active={monthly ? "month" : "all"}
+        items={[
+          { value: "all", label: messages.team.allWeddings, href: "/team" },
+          { value: "month", label: messages.team.monthly, href: `/team?month=${month.key}` },
+        ]}
+      />
+      <p className="mb-5 text-sm text-muted">{messages.team.payScopeHint}</p>
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label={messages.team.payMonth} value={formatTnd(totals.total)} />
+        <StatCard label={monthly ? fill(messages.team.payMonth, { month: month.label }) : messages.team.payAll} value={formatTnd(totals.total)} />
         <StatCard label={messages.team.alreadyPaid} value={formatTnd(totals.paid)} />
         <StatCard label={messages.team.stillToPay} value={formatTnd(totals.unpaid)} tone={totals.unpaid > 0 ? "warn" : "default"} />
         <StatCard label={messages.team.peopleWorking} value={jobs.size} hint={fill(messages.team.assignments, { count: allJobs.length })} />
       </div>
 
-      <Disclosure label={messages.team.addMember} open={Boolean(params.error)}>
+      {admin ? <Disclosure label={messages.team.addMember} open={Boolean(params.error)}>
         <form action={createMember} autoComplete="off" className="grid gap-4 pb-5 md:grid-cols-2">
           <Field label={messages.team.name}>
             <input name="full_name" required />
+          </Field>
+          <Field label={messages.team.userRole}>
+            <select name="role" defaultValue="member">
+              <option value="member">{messages.terms.member}</option>
+              <option value="assistant">{messages.terms.assistant}</option>
+            </select>
+            <span className="text-xs text-muted">{messages.team.roleHint}</span>
           </Field>
           <Field label={messages.team.job}>
             <input name="job" placeholder={messages.team.jobHint} list="jobs" />
@@ -105,7 +127,7 @@ export default async function TeamPage({
             <option value="Drone pilot" />
           </datalist>
         </form>
-      </Disclosure>
+      </Disclosure> : null}
 
       <TableCard>
         <table>
@@ -116,7 +138,7 @@ export default async function TeamPage({
               <th>{messages.team.instagram}</th>
               <th>{messages.team.rate}</th>
               <th>{messages.team.weddings}</th>
-              <th>{messages.team.payThisMonth}</th>
+              <th>{monthly ? messages.team.payThisMonth : messages.team.payAll}</th>
             </tr>
           </thead>
           <tbody>
@@ -131,7 +153,7 @@ export default async function TeamPage({
                       {member.full_name}
                     </Link>
                     <span className="mt-0.5 flex flex-wrap gap-1">
-                      {member.role === "admin" ? <Badge tone="violet">{messages.terms.admin}</Badge> : null}
+                      {member.role === "admin" ? <Badge tone="violet">{messages.terms.admin}</Badge> : member.role === "assistant" ? <Badge tone="blue">{messages.terms.assistant}</Badge> : null}
                       {member.has_login ? null : <Badge>{messages.team.noLogin}</Badge>}
                       {member.active ? null : <Badge>{messages.team.inactive}</Badge>}
                     </span>

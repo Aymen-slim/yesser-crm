@@ -4,7 +4,7 @@ import { PrintButton, SubmitButton } from "@/components/client";
 import { ContractResetButton, YesserContract } from "@/components/yesser-contract";
 import { Banner, coupleName } from "@/components/ui";
 import { resetContract, saveContract } from "@/lib/actions";
-import { requireAdmin } from "@/lib/auth";
+import { requireManager } from "@/lib/auth";
 import { encodeSchedule, formatDt, guessPack, packFields, readContractBlanks, type ContractBlanks, type ScheduleRow } from "@/lib/contract";
 import { one } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/server";
@@ -22,7 +22,7 @@ export default async function WeddingContractPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ error?: string; notice?: string }>;
 }) {
-  await requireAdmin();
+  await requireManager();
   const { id } = await params;
   const { error, notice } = await searchParams;
   if (!UUID.test(id)) notFound();

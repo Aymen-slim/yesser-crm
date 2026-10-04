@@ -31,7 +31,7 @@ function load(relative, overrides = {}, moduleCache = cache) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
     fileName: filename,
   });
-  runInNewContext(outputText, { module: loadedModule, exports: loadedModule.exports, require, URLSearchParams }, { filename });
+  runInNewContext(outputText, { module: loadedModule, exports: loadedModule.exports, require, URLSearchParams, process }, { filename });
   moduleCache.set(filename, loadedModule.exports);
   return loadedModule.exports;
 }
@@ -152,7 +152,7 @@ test("error page renders on the server without browser globals", () => {
   assert.ok(html.includes("test-reference"));
 });
 
-function weddingPageFixture({ whatsappEnabled = false, weddingError = null, missing = false } = {}) {
+function weddingPageFixture({ whatsappEnabled = false, weddingError = null, missing = false, role = "admin" } = {}) {
   const client = { id: "client-id", partner_one_name: "Test", partner_two_name: "Partner", phone: "+33612345678" };
   const wedding = { id: "wedding-id", client_id: client.id, wedding_date: "2027-06-12", status: "reserved", total_millimes: 0, clients: [client], packages: [] };
   const queries = [];
@@ -161,7 +161,7 @@ function weddingPageFixture({ whatsappEnabled = false, weddingError = null, miss
       const query = {
         columns: "",
         select(columns) { this.columns = columns; queries.push({ table, columns }); return this; },
-        eq() { return this; },
+        eq(column, value) { queries.push({ table, column, value }); return this; },
         neq() { return this; },
         order() { return this; },
         in() { return this; },
@@ -190,7 +190,7 @@ function weddingPageFixture({ whatsappEnabled = false, weddingError = null, miss
     "@/components/record-forms": components,
     "@/components/ui": components,
     "@/lib/actions": {},
-    "@/lib/auth": { requireUser: async () => ({ id: "admin-id", role: "admin" }) },
+    "@/lib/auth": { requireUser: async () => ({ id: "user-id", role }), canManageCrm: (profile) => ["admin", "assistant"].includes(profile.role) },
     "@/lib/locale": { getLocale: async () => "en" },
     "@/lib/supabase/server": { createClient: async () => supabase },
   });
@@ -293,7 +293,7 @@ function couplesPageFixture(tab) {
   const { default: CouplesPage } = load("src/app/(studio)/clients/page.tsx", {
     "@/components/record-forms": components,
     "@/components/ui": components,
-    "@/lib/auth": { requireAdmin: async () => ({ id: "admin-id", role: "admin" }) },
+    "@/lib/auth": { requireManager: async () => ({ id: "admin-id", role: "admin" }) },
     "@/lib/locale": { getLocale: async () => "en" },
     "@/lib/supabase/server": { createClient: async () => supabase },
   });
@@ -305,4 +305,412 @@ test("booked couples and leads remain visible before the WhatsApp migration", as
     const element = await couplesPageFixture(tab);
     assert.ok(findElement(element, (node) => node.props?.phone === "+33612345678"), tab);
   }
+});
+
+function authFixture(role, active = true) {
+  const profile = { id: "user-id", role, full_name: "Test User", active };
+  const events = [];
+  const auth = load("src/lib/auth.ts", {
+    react: { cache: (fn) => fn },
+    "next/navigation": { redirect(path) { throw new Error(`REDIRECT:${path}`); } },
+    "@/lib/supabase/server": { createClient: async () => ({
+      auth: { getClaims: async () => ({ data: { claims: { sub: profile.id } } }), signOut: async () => events.push("signOut") },
+      from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: profile, error: null }) }) }) }),
+    }) },
+  });
+  return { auth, events, profile };
+}
+
+async function withSupabaseEnv(callback) {
+  const previous = { ...process.env };
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "test-key";
+  try { await callback(); }
+  finally {
+    for (const key of ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY"]) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
+}
+
+test("assistants can manage CRM records but cannot pass the admin guard", async () => {
+  await withSupabaseEnv(async () => {
+    const { auth, profile } = authFixture("assistant");
+    assert.equal(auth.canManageCrm(profile), true);
+    assert.equal((await auth.requireManager()).role, "assistant");
+    await assert.rejects(auth.requireAdmin(), { message: "REDIRECT:/weddings" });
+    assert.equal((await authFixture("admin").auth.requireAdmin()).role, "admin");
+    await assert.rejects(authFixture("member").auth.requireManager(), { message: "REDIRECT:/" });
+  });
+});
+
+test("inactive assistants are signed out and unknown roles fail closed", async () => {
+  await withSupabaseEnv(async () => {
+    const { auth, events } = authFixture("assistant", false);
+    await assert.rejects(auth.requireManager(), { message: "REDIRECT:/login?error=account_inactive" });
+    assert.deepEqual(events, ["signOut"]);
+    const unknown = authFixture("unknown");
+    assert.equal(unknown.auth.canManageCrm({ role: "unknown", active: true }), false);
+    await assert.rejects(unknown.auth.requireUser(), { message: "REDIRECT:/login?error=account_inactive" });
+  });
+});
+
+test("assistant role is validated for new accounts and role updates", () => {
+  const { memberSchema, memberRoleSchema } = load("src/lib/validators.ts");
+  assert.equal(memberSchema.parse({ full_name: "Test", role: "assistant" }).role, "assistant");
+  assert.equal(memberSchema.parse({ full_name: "Test" }).role, "member");
+  assert.equal(memberSchema.safeParse({ full_name: "Test", role: "admin" }).success, false);
+  const id = "12345678-1234-4234-8234-123456789012";
+  assert.equal(memberRoleSchema.safeParse({ id, role: "assistant" }).success, true);
+  for (const role of ["admin", "unknown", ""]) assert.equal(memberRoleSchema.safeParse({ id, role }).success, false);
+});
+
+test("assistant dashboard requests redirect before any data is loaded", async () => {
+  const { default: DashboardPage } = load("src/app/(studio)/page.tsx", {
+    "next/navigation": { redirect(path) { throw new Error(`REDIRECT:${path}`); } },
+    "@/components/chart": {}, "@/components/ui": {},
+    "@/lib/auth": { requireUser: async () => ({ role: "assistant" }) },
+    "@/lib/supabase/server": { createClient: async () => assert.fail("Dashboard data must not be queried") },
+    "@/lib/locale": { getLocale: async () => assert.fail("Dashboard must redirect immediately") },
+  });
+  await assert.rejects(DashboardPage({ searchParams: Promise.resolve({}) }), { message: "REDIRECT:/weddings" });
+});
+
+test("assistant navigation includes CRM pages but excludes the dashboard", () => {
+  const { Shell } = load("src/components/shell.tsx", {
+    "@/components/client": { NavLinks: () => null, LanguageSwitcher: () => null },
+    "@/components/ui": { LogoMark: () => null },
+    "@/lib/actions": { signOut: () => {} },
+    "@/lib/auth": { canManageCrm: (profile) => ["admin", "assistant"].includes(profile.role) },
+  });
+  const render = (role) => Shell({ profile: { id: "user", role, full_name: "Test" }, locale: "en", messages: getMessages("en"), children: null });
+  const links = findElement(render("assistant"), (node) => node.props?.items)?.props.items;
+  assert.deepEqual(Array.from(links, (link) => link.href), ["/clients", "/weddings", "/calendar", "/payments", "/expenses", "/packages", "/team"]);
+  assert.ok(findElement(render("admin"), (node) => node.props?.items)?.props.items.some((link) => link.href === "/"));
+  assert.deepEqual(Array.from(findElement(render("member"), (node) => node.props?.items)?.props.items, (link) => link.href), ["/", "/weddings", "/calendar"]);
+});
+
+test("assistants see all wedding tasks and payments while members remain restricted", async () => {
+  const assistant = weddingPageFixture({ role: "assistant" });
+  await assistant.render();
+  assert.ok(assistant.queries.some((query) => query.table === "payments"));
+  assert.ok(!assistant.queries.some((query) => query.table === "tasks" && query.column === "assignee_id"));
+  const member = weddingPageFixture({ role: "member" });
+  await member.render();
+  assert.ok(!member.queries.some((query) => query.table === "payments"));
+  assert.ok(member.queries.some((query) => query.table === "tasks" && query.column === "assignee_id" && query.value === "user-id"));
+});
+
+function actionsFixture(role, supabase = { from() { assert.fail("Unexpected database access"); } }) {
+  const { auth, profile } = authFixture(role);
+  const actions = load("src/lib/actions.ts", {
+    "next/navigation": { redirect(path) { throw new Error(`REDIRECT:${path}`); } },
+    "next/cache": { revalidatePath() {} },
+    "next/headers": { cookies: async () => ({}) },
+    "@/lib/auth": auth,
+    "@/lib/supabase/server": { createClient: async () => supabase },
+    "@/lib/supabase/admin": { createAdminClient() { assert.fail("Unexpected account-management access"); } },
+  });
+  return { actions, profile };
+}
+
+test("direct account-management actions stay admin-only", async () => {
+  await withSupabaseEnv(async () => {
+    const { actions } = actionsFixture("assistant");
+    for (const name of ["createMember", "updateMember", "updateMemberRole", "grantMemberLogin", "updateMemberLogin", "deleteMember", "setMemberActive"]) {
+      await assert.rejects(actions[name](new FormData()), { message: "REDIRECT:/weddings" }, name);
+    }
+  });
+});
+
+test("members cannot invoke management actions directly", async () => {
+  await withSupabaseEnv(async () => {
+    const { actions } = actionsFixture("member");
+    for (const name of ["saveLead", "convertLead", "saveClient", "deleteClient", "savePackage", "deletePackage", "saveExtra", "deleteExtra", "saveWeddingOffer", "addWeddingExtra", "updateWeddingExtra", "removeWeddingExtra", "addWeddingDay", "removeWeddingDay", "addWeddingPlace", "removeWeddingPlace", "saveWeddingFeatures", "resetWeddingFeatures", "saveWedding", "deleteWedding", "savePayment", "deletePayment", "markPaymentPaid", "saveExpense", "deleteExpense", "saveInvoice", "saveContract", "resetContract", "assignMember", "updateAssignment", "unassignMember", "setCrewPaid", "deleteTask", "quickBook", "deleteWeddingFile"]) {
+      await assert.rejects(actions[name](new FormData()), { message: "REDIRECT:/" }, name);
+    }
+  });
+});
+
+test("assistants can save couples and assign tasks to other members", async () => {
+  await withSupabaseEnv(async () => {
+    const inserts = [];
+    const supabase = { from: (table) => ({ insert: async (row) => { inserts.push({ table, row }); return { error: null }; } }) };
+    const { actions } = actionsFixture("assistant", supabase);
+    const couple = new FormData();
+    couple.set("partner_one_name", "Test");
+    couple.set("phone", "20123456");
+    await assert.rejects(actions.saveClient(couple), { message: "REDIRECT:/clients?tab=booked&notice=couple_added" });
+    assert.equal(inserts[0].table, "clients");
+    assert.equal(inserts[0].row.phone, "+21620123456");
+    const task = new FormData();
+    task.set("wedding_id", "12345678-1234-4234-8234-123456789012");
+    task.set("assignee_id", "22345678-1234-4234-8234-123456789012");
+    task.set("title", "Edit");
+    await assert.rejects(actions.saveTask(task), /notice=task_added/);
+    assert.equal(inserts[1].row.assignee_id, task.get("assignee_id"));
+    await assert.rejects(actionsFixture("member", supabase).actions.saveTask(task), /notice=task_added/);
+    assert.equal(inserts[2].row.assignee_id, "user-id");
+  });
+});
+
+test("role updates cannot promote admins or downgrade existing admin accounts", async () => {
+  await withSupabaseEnv(async () => {
+    const filters = [];
+    const query = {
+      update(row) { assert.equal(row.role, "assistant"); return this; },
+      eq(column, value) { filters.push([column, value]); return this; },
+      neq(column, value) { filters.push([column, value]); return this; },
+      select() { return this; },
+      maybeSingle: async () => ({ data: null, error: null }),
+    };
+    const { actions } = actionsFixture("admin", { from: () => query });
+    const form = new FormData();
+    form.set("id", "12345678-1234-4234-8234-123456789012");
+    form.set("role", "admin");
+    await assert.rejects(actions.updateMemberRole(form), { message: "REDIRECT:/team?error=err_form" });
+    assert.equal(filters.length, 0);
+    form.set("role", "assistant");
+    await assert.rejects(actions.updateMemberRole(form), /error=save_member_failed/);
+    assert.deepEqual(filters, [["id", form.get("id")], ["role", "admin"]]);
+  });
+});
+
+test("assistant team pages never load login credentials or expose account controls", async () => {
+  const member = { id: "member-id", full_name: "Test Member", role: "member", job: "Photographer", active: true, has_login: true, member_rates: [] };
+  function TestComponent() { return null; }
+  const components = new Proxy({}, { get: () => TestComponent });
+  const { default: TeamMemberPage } = load("src/app/(studio)/team/[id]/page.tsx", {
+    "@/components/client": components, "@/components/ui": components, "@/lib/actions": {},
+    "@/lib/auth": { requireManager: async () => ({ id: "assistant-id", role: "assistant" }) },
+    "@/lib/locale": { getLocale: async () => "en" },
+    "@/lib/queries": { ...load("src/lib/queries.ts"), memberJobs: async () => [] },
+    "@/lib/supabase/server": { createClient: async () => ({ from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: member }) }) }) }) }) },
+    "@/lib/supabase/admin": { createAdminClient() { assert.fail("Assistants must not load auth account data"); } },
+  });
+  const page = await TeamMemberPage({ params: Promise.resolve({ id: member.id }), searchParams: Promise.resolve({}) });
+  assert.ok(findElement(page, (node) => node.type === "fieldset" && node.props.disabled));
+  assert.ok(!findElement(page, (node) => node.props?.title === getMessages("en").team.account));
+});
+
+test("assistant migration covers CRM tables without granting profile or admin privileges", () => {
+  const sql = readFileSync(resolve(root, "supabase/migrations/20261004130000_assistant_role.sql"), "utf8");
+  assert.match(sql, /alter type public\.app_role add value if not exists 'assistant'/);
+  assert.match(sql, /role::text in \('admin', 'assistant'\) and active/);
+  const tableList = sql.match(/foreach table_name in array array\[([\s\S]*?)\]/)[1];
+  const tables = Array.from(tableList.matchAll(/'([a-z_]+)'/g), (match) => match[1]);
+  assert.deepEqual(tables, ["clients", "leads", "weddings", "packages", "extras", "wedding_extras", "wedding_days", "wedding_locations", "wedding_assignments", "payments", "expenses", "tasks", "notes", "files", "member_rates", "assignment_pay", "invoices", "invoice_lines", "contracts"]);
+  assert.ok(!sql.includes("function public.is_admin("));
+  assert.ok(!/on public\.profiles/.test(sql));
+  assert.equal((sql.match(/if not public\.can_manage_crm\(\) then/g) ?? []).length, 4);
+  assert.equal((sql.match(/bucket_id = 'studio-files' and public\.can_manage_crm\(\)/g) ?? []).length, 3);
+});
+
+const payRows = [
+  { member_id: "crew-a", role_on_day: "Photo", weddings: { id: "past", wedding_date: "2026-09-10", status: "confirmed", clients: { partner_one_name: "Past", partner_two_name: "Couple" } }, assignment_pay: [{ amount_millimes: 125000, paid_at: null }] },
+  { member_id: "crew-a", role_on_day: "Photo", weddings: [{ id: "future", wedding_date: "2027-06-12", status: "reserved", clients: [{ partner_one_name: "Future", partner_two_name: "Couple" }] }], assignment_pay: { amount_millimes: 350000, paid_at: null } },
+  { member_id: "crew-b", role_on_day: "Video", weddings: { id: "current", wedding_date: "2026-10-12", status: "confirmed", clients: null }, assignment_pay: [{ amount_millimes: 200000, paid_at: "2026-11-01" }] },
+  { member_id: "crew-a", role_on_day: "Photo", weddings: { id: "old-paid", wedding_date: "2026-08-12", status: "delivered", clients: null }, assignment_pay: [{ amount_millimes: 75000, paid_at: "2026-10-01" }] },
+  { member_id: "crew-a", role_on_day: "Photo", weddings: { id: "cancelled", wedding_date: "2026-10-20", status: "cancelled", clients: null }, assignment_pay: [{ amount_millimes: 999000, paid_at: null }] },
+];
+
+function crewLookup(rows = payRows, error = null, profileError = null, maxRows = Infinity) {
+  const calls = [];
+  const profiles = ["crew-a", "crew-b"].map((id) => ({ id, full_name: id, role: "member", active: true, has_login: false, job: "Photo", instagram: "", phone: null, member_rates: [] }));
+  const supabase = {
+    from(table) {
+      calls.push(table);
+      const filters = [];
+      let start = 0, end = Infinity;
+      const value = (row, column) => column.split(".").reduce((result, key) => (Array.isArray(result) ? result[0] : result)?.[key], row);
+      const result = () => {
+        const matched = (table === "profiles" ? profiles : rows).filter((row) => filters.every((filter) => filter(row)));
+        return { data: matched.slice(start, Math.min(end + 1, start + maxRows)), count: matched.length, error: table === "profiles" ? profileError : typeof error === "function" ? error(start) : error };
+      };
+      const query = {
+        select() { return this; }, order() { return this; },
+        gte(column, limit) { filters.push((row) => value(row, column) >= limit); return this; },
+        lt(column, limit) { filters.push((row) => value(row, column) < limit); return this; },
+        neq(column, excluded) { filters.push((row) => value(row, column) !== excluded); return this; },
+        eq(column, expected) { filters.push((row) => value(row, column) === expected); return this; },
+        range(first, last) { start = first; end = last; return this; },
+        maybeSingle: async () => ({ ...result(), data: result().data[0] ?? null }),
+        then(resolve) { return Promise.resolve(result()).then(resolve); },
+      };
+      return query;
+    },
+  };
+  return { supabase, calls };
+}
+
+async function teamPayPage(searchParams = {}, memberId, lookup = crewLookup()) {
+  function TestComponent() { return null; }
+  const components = new Proxy({}, { get: () => TestComponent });
+  const { default: Page } = load(memberId ? "src/app/(studio)/team/[id]/page.tsx" : "src/app/(studio)/team/page.tsx", {
+    "@/components/client": components, "@/components/ui": components, "@/lib/actions": {},
+    "@/lib/auth": { requireManager: async () => ({ id: "admin-id", role: "admin" }) },
+    "@/lib/constants": { ...load("src/lib/constants.ts"), todayInTunis: () => "2026-10-04" },
+    "@/lib/locale": { getLocale: async () => "en" },
+    "@/lib/supabase/server": { createClient: async () => lookup.supabase },
+    "@/lib/supabase/admin": { createAdminClient() { assert.fail("No login should be loaded"); } },
+  });
+  return Page({ params: Promise.resolve({ id: memberId }), searchParams: Promise.resolve(searchParams) });
+}
+
+test("Team still-to-pay includes past and future unpaid assignments by default", async () => {
+  const page = await teamPayPage();
+  const balance = findElement(page, (node) => node.props?.label === getMessages("en").team.stillToPay);
+  assert.equal(balance.props.value, load("src/lib/money.ts").formatTnd(475000));
+  const member = await teamPayPage({}, "crew-a");
+  assert.equal(findElement(member, (node) => node.props?.label === getMessages("en").team.stillToPay).props.value, balance.props.value);
+});
+
+test("explicit monthly Team and member views use the same wedding-date scope", async () => {
+  const page = await teamPayPage({ month: "2026-10" });
+  const format = load("src/lib/money.ts").formatTnd;
+  assert.equal(findElement(page, (node) => node.props?.label === getMessages("en").team.stillToPay).props.value, format(0));
+  const member = await teamPayPage({ month: "2026-10" }, "crew-a");
+  assert.equal(findElement(member, (node) => node.props?.label === getMessages("en").team.earned).props.value, format(0));
+});
+
+test("crew query failures must not be displayed as zero balances", async () => {
+  const queries = load("src/lib/queries.ts");
+  const range = { start: "2026-10-01", end: "2026-11-01" };
+  for (const code of ["42501", "XX000", "PGRST200"]) {
+    await assert.rejects(queries.crewJobs(crewLookup([], { code }).supabase, range), { message: "crew_pay_failed" });
+    await assert.rejects(queries.memberJobs(crewLookup([], { code }).supabase, range, "crew-a"), { message: "crew_pay_failed" });
+  }
+});
+
+test("crew totals preserve stored pay and exclude cancelled weddings", async () => {
+  const { crewJobs, payTotals } = load("src/lib/queries.ts");
+  const jobs = await crewJobs(crewLookup().supabase, null);
+  const totals = payTotals([...jobs.values()].flat());
+  assert.equal(totals.total, 750000);
+  assert.equal(totals.paid, 275000);
+  assert.equal(totals.unpaid, 475000);
+  assert.equal(totals.total, totals.paid + totals.unpaid);
+});
+
+test("all-wedding pay totals include assignments beyond the first database page", async () => {
+  const { crewJobs, payTotals } = load("src/lib/queries.ts");
+  const rows = Array.from({ length: 1005 }, (_, index) => ({ ...payRows[0], weddings: { ...payRows[0].weddings, id: `job-${index}` }, assignment_pay: [{ amount_millimes: 1000, paid_at: null }] }));
+  const jobs = await crewJobs(crewLookup(rows).supabase, null);
+  assert.equal(payTotals([...jobs.values()].flat()).unpaid, 1005000);
+});
+
+const payWeddingId = "12345678-1234-4234-8234-123456789012";
+const payMemberId = "22345678-1234-4234-8234-123456789012";
+
+function crewPaidFixture(error = null, missing = false) {
+  const stored = { amount_millimes: 350000, paid_at: null };
+  let upserts = 0;
+  const supabase = { from: (table) => {
+    assert.equal(table, "assignment_pay");
+    const query = {
+      update(row) { if (!error && !missing) Object.assign(stored, row); return this; },
+      select() { return this; }, eq() { return this; },
+      maybeSingle: async () => ({ data: error || missing ? null : stored, error }),
+      upsert: async (row) => { upserts++; Object.assign(stored, row); return { error: null }; },
+    };
+    return query;
+  } };
+  const form = new FormData();
+  form.set("wedding_id", payWeddingId);
+  form.set("member_id", payMemberId);
+  form.set("paid", "true");
+  return { stored, form, supabase, upserts: () => upserts };
+}
+
+test("marking crew paid and undoing changes only payment status, never the agreed amount", async () => {
+  await withSupabaseEnv(async () => {
+    const fixture = crewPaidFixture();
+    const { actions } = actionsFixture("admin", fixture.supabase);
+    await assert.rejects(actions.setCrewPaid(fixture.form), /notice=marked_paid/);
+    assert.ok(fixture.stored.paid_at);
+    assert.equal(fixture.stored.amount_millimes, 350000);
+    fixture.form.set("paid", "false");
+    await assert.rejects(actions.setCrewPaid(fixture.form), /notice=marked_unpaid/);
+    assert.equal(fixture.stored.paid_at, null);
+    assert.equal(fixture.stored.amount_millimes, 350000);
+    assert.equal(fixture.upserts(), 0);
+  });
+});
+
+test("missing or failed crew-pay updates cannot overwrite amounts with zero", async () => {
+  await withSupabaseEnv(async () => {
+    for (const fixture of [crewPaidFixture({ code: "XX000" }), crewPaidFixture(null, true)]) {
+      await assert.rejects(actionsFixture("admin", fixture.supabase).actions.setCrewPaid(fixture.form), /error=pay_update_failed/);
+      assert.equal(fixture.stored.amount_millimes, 350000);
+      assert.equal(fixture.upserts(), 0);
+    }
+  });
+});
+
+test("crew payment status validates IDs and the paid flag before querying", async () => {
+  await withSupabaseEnv(async () => {
+    const { actions } = actionsFixture("admin");
+    const fixture = crewPaidFixture();
+    fixture.form.set("paid", "unexpected");
+    await assert.rejects(actions.setCrewPaid(fixture.form), /error=pay_update_failed/);
+    fixture.form.set("paid", "true");
+    fixture.form.set("member_id", "invalid");
+    await assert.rejects(actions.setCrewPaid(fixture.form), /error=pay_update_failed/);
+  });
+});
+
+test("replacing a paid crew member does not mark their replacement as paid", async () => {
+  await withSupabaseEnv(async () => {
+    for (const replace of [true, false]) {
+      let savedPay;
+      const supabase = { from: (table) => ({
+        select() { return this; }, eq() { return this; }, delete() { return this; }, update() { return this; },
+        then(resolve) { return Promise.resolve({ error: null }).then(resolve); },
+        maybeSingle: async () => ({ data: table === "profiles" ? { job: "Photo" } : table === "assignment_pay" ? { amount_millimes: 350000, paid_at: "2026-10-01" } : null, error: null }),
+        insert: async () => ({ error: null }),
+        upsert: async (row) => { savedPay = row; return { error: null }; },
+      }) };
+      const form = new FormData();
+      form.set("wedding_id", payWeddingId);
+      form.set("previous_member_id", payMemberId);
+      form.set("member_id", replace ? "32345678-1234-4234-8234-123456789012" : payMemberId);
+      await assert.rejects(actionsFixture("admin", supabase).actions.updateAssignment(form), /notice=assignment_saved/);
+      assert.equal(savedPay.amount_millimes, 350000);
+      assert.equal(savedPay.paid_at, replace ? null : "2026-10-01");
+    }
+  });
+});
+
+test("pay pagination handles lower database row limits and never returns partial totals on error", async () => {
+  const { crewJobs, payTotals } = load("src/lib/queries.ts");
+  const rows = Array.from({ length: 7 }, (_, index) => ({ ...payRows[0], weddings: { ...payRows[0].weddings, id: `job-${index}` } }));
+  const jobs = await crewJobs(crewLookup(rows, null, null, 2).supabase, null);
+  assert.equal(payTotals([...jobs.values()].flat()).unpaid, 875000);
+  await assert.rejects(crewJobs(crewLookup(rows, (offset) => offset > 0 ? { code: "XX000" } : null, null, 2).supabase, null), { message: "crew_pay_failed" });
+});
+
+test("monthly pay uses inclusive start, exclusive end, and preserves zero agreed amounts", async () => {
+  const { crewJobs, payTotals } = load("src/lib/queries.ts");
+  const rows = ["2026-10-01", "2026-10-31", "2026-11-01"].map((date, index) => ({ ...payRows[0], weddings: { ...payRows[0].weddings, id: `job-${index}`, wedding_date: date }, assignment_pay: [{ amount_millimes: index === 0 ? 0 : 125000, paid_at: null }] }));
+  const jobs = await crewJobs(crewLookup(rows).supabase, { start: "2026-10-01", end: "2026-11-01" });
+  assert.equal(jobs.get("crew-a").length, 2);
+  assert.equal(jobs.get("crew-a")[0].pay, 0);
+  assert.equal(payTotals([...jobs.values()].flat()).unpaid, 125000);
+});
+
+test("Team profile failures show an error rather than an empty list or not-found", async () => {
+  for (const memberId of [undefined, "crew-a"]) {
+    await assert.rejects(teamPayPage({}, memberId, crewLookup([], null, { code: "XX000" })), { message: "team_failed" });
+  }
+});
+
+test("Team month navigation and member links preserve the selected monthly view", async () => {
+  const page = await teamPayPage({ month: "2026-09" });
+  const header = findElement(page, (node) => node.props?.title === getMessages("en").team.title);
+  assert.equal(header.props.action.props.currentHref, "/team?view=month");
+  assert.ok(findElement(page, (node) => node.props?.href === "/team/crew-a?month=2026-09"));
+  const member = await teamPayPage({ month: "2026-09" }, "crew-a");
+  assert.ok(findElement(member, (node) => node.props?.back?.href === "/team?month=2026-09"));
+  assert.ok(findElement(member, (node) => node.props?.currentHref === "/team/crew-a?view=month"));
 });

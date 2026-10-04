@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PrintButton } from "@/components/client";
 import { Card, coupleName } from "@/components/ui";
-import { requireAdmin } from "@/lib/auth";
+import { requireManager } from "@/lib/auth";
 import { formatDate, one } from "@/lib/constants";
 import { getMessages } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
@@ -16,7 +16,7 @@ export async function generateMetadata() {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export default async function InvoicePage({ params }: { params: Promise<{ id: string }> }) {
-  await requireAdmin();
+  await requireManager();
   const locale = await getLocale();
   const messages = getMessages(locale);
   const { id } = await params;

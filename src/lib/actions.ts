@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { isLocale, LOCALE_COOKIE } from "@/lib/i18n";
-import { requireAdmin, requireUser } from "@/lib/auth";
+import { canManageCrm, requireAdmin, requireManager, requireUser } from "@/lib/auth";
 import { one, todayInTunis } from "@/lib/constants";
 import { rateToBps } from "@/lib/money";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -14,6 +14,7 @@ import {
   assignSchema,
   clientSchema,
   convertSchema,
+  crewPaidSchema,
   expenseSchema,
   extraSchema,
   leadSchema,
@@ -22,6 +23,7 @@ import {
   memberLoginSchema,
   memberLoginUpdateSchema,
   memberSchema,
+  memberRoleSchema,
   memberUpdateSchema,
   noteSchema,
   offerSchema,
@@ -185,7 +187,7 @@ export async function signOut() {
 }
 
 export async function saveLead(formData: FormData) {
-  const profile = await requireAdmin();
+  const profile = await requireManager();
   const id = String(formData.get("id") ?? "");
   const back = id ? `/leads/${id}` : "/clients?tab=leads";
   const parsed = parseForm(leadSchema, formData);
@@ -215,7 +217,7 @@ export async function saveLead(formData: FormData) {
 }
 
 export async function convertLead(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const leadId = String(formData.get("lead_id") ?? "");
   const back = `/leads/${leadId}`;
   const parsed = parseForm(convertSchema, formData);
@@ -261,7 +263,7 @@ export async function convertLead(formData: FormData) {
 }
 
 export async function saveClient(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const id = String(formData.get("id") ?? "");
   const back = id ? `/clients/${id}` : "/clients?tab=booked";
   const parsed = parseForm(clientSchema, formData);
@@ -289,7 +291,7 @@ export async function saveClient(formData: FormData) {
 }
 
 export async function deleteClient(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const id = String(formData.get("id") ?? "");
   const back = `/clients/${id}`;
   const supabase = await createClient();
@@ -314,7 +316,7 @@ export async function deleteClient(formData: FormData) {
 }
 
 export async function savePackage(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const id = String(formData.get("id") ?? "");
   const back = id ? `/packages/${id}` : "/packages";
   const parsed = parseForm(packageSchema, formData);
@@ -343,7 +345,7 @@ export async function savePackage(formData: FormData) {
 }
 
 export async function deletePackage(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const id = String(formData.get("id") ?? "");
   const supabase = await createClient();
   const { error } = await supabase.from("packages").delete().eq("id", id);
@@ -354,7 +356,7 @@ export async function deletePackage(formData: FormData) {
 }
 
 export async function saveExtra(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const id = String(formData.get("id") ?? "");
   const parsed = parseForm(extraSchema, formData);
   if ("error" in parsed) fail("/packages", parsed.error);
@@ -374,7 +376,7 @@ export async function saveExtra(formData: FormData) {
 }
 
 export async function deleteExtra(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const id = String(formData.get("id") ?? "");
   const supabase = await createClient();
   const { error } = await supabase.from("extras").delete().eq("id", id);
@@ -385,7 +387,7 @@ export async function deleteExtra(formData: FormData) {
 }
 
 export async function saveWeddingOffer(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const weddingId = String(formData.get("wedding_id") ?? "");
   const back = `/weddings/${weddingId}`;
   const parsed = parseForm(offerSchema, formData);
@@ -426,7 +428,7 @@ export async function saveWeddingOffer(formData: FormData) {
 }
 
 export async function addWeddingExtra(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const weddingId = String(formData.get("wedding_id") ?? "");
   const back = `/weddings/${weddingId}`;
   const parsed = parseForm(weddingExtraSchema, formData);
@@ -473,7 +475,7 @@ export async function addWeddingExtra(formData: FormData) {
 }
 
 export async function updateWeddingExtra(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const weddingId = String(formData.get("wedding_id") ?? "");
   const back = `/weddings/${weddingId}`;
   const parsed = parseForm(weddingExtraPriceSchema, formData);
@@ -499,7 +501,7 @@ export async function updateWeddingExtra(formData: FormData) {
 }
 
 export async function removeWeddingExtra(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const weddingId = String(formData.get("wedding_id") ?? "");
   const id = String(formData.get("id") ?? "");
   const back = `/weddings/${weddingId}`;
@@ -528,7 +530,7 @@ function touchWedding(weddingId: string) {
 }
 
 export async function addWeddingDay(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const weddingId = String(formData.get("wedding_id") ?? "");
   const back = `/weddings/${weddingId}`;
   const parsed = parseForm(weddingDaySchema, formData);
@@ -558,7 +560,7 @@ export async function addWeddingDay(formData: FormData) {
 }
 
 export async function removeWeddingDay(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const parsed = parseForm(weddingChildSchema, formData);
   const weddingId = String(formData.get("wedding_id") ?? "");
   const back = `/weddings/${weddingId}`;
@@ -576,7 +578,7 @@ export async function removeWeddingDay(formData: FormData) {
 }
 
 export async function addWeddingPlace(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const weddingId = String(formData.get("wedding_id") ?? "");
   const back = `/weddings/${weddingId}`;
   const parsed = parseForm(weddingPlaceSchema, formData);
@@ -601,7 +603,7 @@ export async function addWeddingPlace(formData: FormData) {
 }
 
 export async function removeWeddingPlace(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const parsed = parseForm(weddingChildSchema, formData);
   const weddingId = String(formData.get("wedding_id") ?? "");
   const back = `/weddings/${weddingId}`;
@@ -619,7 +621,7 @@ export async function removeWeddingPlace(formData: FormData) {
 }
 
 export async function saveWeddingFeatures(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const weddingId = String(formData.get("wedding_id") ?? "");
   const back = `/weddings/${weddingId}`;
   const parsed = parseForm(weddingFeaturesSchema, formData);
@@ -639,7 +641,7 @@ export async function saveWeddingFeatures(formData: FormData) {
 }
 
 export async function resetWeddingFeatures(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const weddingId = String(formData.get("wedding_id") ?? "");
   const back = `/weddings/${weddingId}`;
   const parsed = parseForm(weddingFeaturesSchema, formData);
@@ -668,7 +670,7 @@ export async function resetWeddingFeatures(formData: FormData) {
 }
 
 export async function saveWedding(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const id = String(formData.get("id") ?? "");
   const back = id ? `/weddings/${id}` : "/weddings";
   const parsed = parseForm(weddingSchema, formData);
@@ -778,7 +780,7 @@ export async function saveWedding(formData: FormData) {
 }
 
 export async function savePayment(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const destination = returnTo(formData, "/payments");
   const id = String(formData.get("id") ?? "");
   if (id && !UUID.test(id)) fail(destination, "save_payment_failed");
@@ -815,7 +817,7 @@ export async function savePayment(formData: FormData) {
 }
 
 export async function deletePayment(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const destination = returnTo(formData, "/payments");
   const id = String(formData.get("id") ?? "");
   if (!UUID.test(id)) fail(destination, "delete_payment_failed");
@@ -827,7 +829,7 @@ export async function deletePayment(formData: FormData) {
 }
 
 export async function saveInvoice(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const weddingId = String(formData.get("wedding_id") ?? "");
   const back = weddingId ? `/invoices/new?wedding=${weddingId}` : "/payments";
   const parsed = parseForm(invoiceSchema, formData);
@@ -860,7 +862,7 @@ export async function saveInvoice(formData: FormData) {
 }
 
 export async function deleteWedding(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const id = String(formData.get("id") ?? "");
   const back = `/weddings/${id}`;
   if (!UUID.test(id)) fail("/weddings", "delete_wedding_failed");
@@ -886,7 +888,7 @@ export async function deleteWedding(formData: FormData) {
 }
 
 export async function saveContract(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const weddingId = String(formData.get("wedding_id") ?? "");
   const back = `/weddings/${weddingId}/contract`;
   const parsed = parseForm(contractSchema, formData);
@@ -910,7 +912,7 @@ export async function saveContract(formData: FormData) {
 }
 
 export async function resetContract(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const weddingId = String(formData.get("wedding_id") ?? "");
   const back = `/weddings/${weddingId}/contract`;
   const parsed = parseForm(contractSchema.pick({ wedding_id: true }), formData);
@@ -923,7 +925,7 @@ export async function resetContract(formData: FormData) {
 }
 
 export async function markPaymentPaid(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const back = returnTo(formData, "/payments");
   const parsed = parseForm(markPaidSchema, formData);
   if ("error" in parsed) fail(back, parsed.error);
@@ -943,7 +945,7 @@ export async function markPaymentPaid(formData: FormData) {
 }
 
 export async function saveExpense(formData: FormData) {
-  const profile = await requireAdmin();
+  const profile = await requireManager();
   const destination = returnTo(formData, "/expenses");
   const id = String(formData.get("id") ?? "");
   if (id && !UUID.test(id)) fail(destination, "save_expense_failed");
@@ -973,7 +975,7 @@ export async function saveExpense(formData: FormData) {
 }
 
 export async function deleteExpense(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const destination = returnTo(formData, "/expenses");
   const id = String(formData.get("id") ?? "");
   if (!UUID.test(id)) fail(destination, "delete_expense_failed");
@@ -998,7 +1000,7 @@ export async function saveTask(formData: FormData) {
     title: parsed.data.title,
     due_date: emptyToNull(parsed.data.due_date),
     status: parsed.data.status,
-    assignee_id: profile.role === "admin" ? emptyToNull(parsed.data.assignee_id) : profile.id,
+    assignee_id: canManageCrm(profile) ? emptyToNull(parsed.data.assignee_id) : profile.id,
   };
   const { error } = id
     ? await supabase.from("tasks").update(row).eq("id", id)
@@ -1029,7 +1031,7 @@ export async function saveNote(formData: FormData) {
 }
 
 export async function assignMember(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const weddingId = String(formData.get("wedding_id") ?? "");
   const back = `/weddings/${weddingId}`;
   const parsed = parseForm(assignSchema, formData);
@@ -1056,11 +1058,12 @@ export async function assignMember(formData: FormData) {
   revalidatePath(back);
   revalidatePath("/team");
   revalidatePath(`/team/${parsed.data.member_id}`);
+  revalidatePath("/");
   done(back, "member_assigned");
 }
 
 export async function updateAssignment(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const weddingId = String(formData.get("wedding_id") ?? "");
   const back = `/weddings/${weddingId}`;
   const parsed = parseForm(assignmentUpdateSchema, formData);
@@ -1070,12 +1073,13 @@ export async function updateAssignment(formData: FormData) {
   const supabase = await createClient();
   const { data: member } = await supabase.from("profiles").select("job").eq("id", nextId).maybeSingle();
   const role = parsed.data.role_on_day || member?.job || "photographer";
-  const { data: existingPay } = await supabase
+  const { data: existingPay, error: payLookupError } = await supabase
     .from("assignment_pay")
     .select("amount_millimes, paid_at")
     .eq("wedding_id", weddingId)
     .eq("member_id", previousId)
     .maybeSingle();
+  if (payLookupError) fail(back, "assign_pay_failed");
   const amount = parsed.data.pay ?? existingPay?.amount_millimes ?? 0;
 
   if (nextId !== previousId) {
@@ -1111,18 +1115,19 @@ export async function updateAssignment(formData: FormData) {
     wedding_id: weddingId,
     member_id: nextId,
     amount_millimes: amount,
-    paid_at: existingPay?.paid_at ?? null,
+    paid_at: nextId === previousId ? existingPay?.paid_at ?? null : null,
   });
   if (payError) fail(back, "assign_pay_failed");
   revalidatePath(back);
   revalidatePath("/team");
   revalidatePath(`/team/${previousId}`);
   revalidatePath(`/team/${nextId}`);
+  revalidatePath("/");
   done(back, "assignment_saved");
 }
 
 export async function unassignMember(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const weddingId = String(formData.get("wedding_id") ?? "");
   const memberId = String(formData.get("member_id") ?? "");
   const back = returnTo(formData, `/weddings/${weddingId}`);
@@ -1135,29 +1140,27 @@ export async function unassignMember(formData: FormData) {
   if (error) fail(back, "unassign_failed");
   revalidatePath(`/weddings/${weddingId}`);
   revalidatePath("/team");
+  revalidatePath(`/team/${memberId}`);
+  revalidatePath("/");
   done(back, "unassigned");
 }
 
 export async function setCrewPaid(formData: FormData) {
-  await requireAdmin();
-  const weddingId = String(formData.get("wedding_id") ?? "");
-  const memberId = String(formData.get("member_id") ?? "");
-  const paid = formData.get("paid") === "true";
-  const back = returnTo(formData, `/weddings/${weddingId}`);
+  await requireManager();
+  const back = returnTo(formData, `/weddings/${String(formData.get("wedding_id") ?? "")}`);
+  const parsed = parseForm(crewPaidSchema, formData);
+  if ("error" in parsed) fail(back, "pay_update_failed");
+  const { wedding_id: weddingId, member_id: memberId } = parsed.data;
+  const paid = parsed.data.paid === "true";
   const supabase = await createClient();
-  const { data: existingPay } = await supabase
+  const { data, error } = await supabase
     .from("assignment_pay")
-    .select("amount_millimes")
+    .update({ paid_at: paid ? todayInTunis() : null })
     .eq("wedding_id", weddingId)
     .eq("member_id", memberId)
+    .select("wedding_id")
     .maybeSingle();
-  const { error } = await supabase.from("assignment_pay").upsert({
-    wedding_id: weddingId,
-    member_id: memberId,
-    amount_millimes: existingPay?.amount_millimes ?? 0,
-    paid_at: paid ? todayInTunis() : null,
-  });
-  if (error) fail(back, "pay_update_failed");
+  if (error || !data) fail(back, "pay_update_failed");
   revalidatePath(`/weddings/${weddingId}`);
   revalidatePath("/team");
   revalidatePath(`/team/${memberId}`);
@@ -1166,7 +1169,7 @@ export async function setCrewPaid(formData: FormData) {
 }
 
 export async function deleteTask(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const id = String(formData.get("id") ?? "");
   const weddingId = String(formData.get("wedding_id") ?? "");
   const back = `/weddings/${weddingId}`;
@@ -1179,7 +1182,7 @@ export async function deleteTask(formData: FormData) {
 }
 
 export async function quickBook(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const date = String(formData.get("wedding_date") ?? "");
   const back = `/calendar?month=${date.slice(0, 7)}&add=${date}`;
   const parsed = parseForm(quickBookSchema, formData);
@@ -1242,7 +1245,7 @@ export async function uploadWeddingFile(formData: FormData) {
 }
 
 export async function deleteWeddingFile(formData: FormData) {
-  await requireAdmin();
+  await requireManager();
   const id = String(formData.get("id") ?? "");
   const weddingId = String(formData.get("wedding_id") ?? "");
   const back = `/weddings/${weddingId}`;
@@ -1266,7 +1269,7 @@ export async function createMember(formData: FormData) {
   const parsed = parseForm(memberSchema, formData);
   if ("error" in parsed) fail("/team", parsed.error);
   const details = {
-    role: "member" as const,
+    role: parsed.data.role,
     full_name: parsed.data.full_name,
     job: parsed.data.job,
     instagram: parsed.data.instagram,
@@ -1337,6 +1340,26 @@ export async function updateMember(formData: FormData) {
   if (rateError) fail(back, "saved_rate_failed");
   revalidatePath("/team");
   revalidatePath(back);
+  done(back, "member_saved");
+}
+
+export async function updateMemberRole(formData: FormData) {
+  const current = await requireAdmin();
+  const parsed = parseForm(memberRoleSchema, formData);
+  if ("error" in parsed) fail("/team", "err_form");
+  const back = `/team/${parsed.data.id}`;
+  if (parsed.data.id === current.id) fail(back, "cannot_change_self");
+  const supabase = await createClient();
+  const { data: member, error } = await supabase
+    .from("profiles")
+    .update({ role: parsed.data.role })
+    .eq("id", parsed.data.id)
+    .neq("role", "admin")
+    .select("id")
+    .maybeSingle();
+  if (error || !member) fail(back, "save_member_failed");
+  console.info("Member role updated:", current.id, member.id, parsed.data.role);
+  revalidatePath("/", "layout");
   done(back, "member_saved");
 }
 

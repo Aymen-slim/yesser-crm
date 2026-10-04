@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { InvoiceForm } from "@/components/record-forms";
 import { Banner, EmptyState, PageHeader, coupleName } from "@/components/ui";
-import { requireAdmin } from "@/lib/auth";
+import { requireManager } from "@/lib/auth";
 import { formatDate, one } from "@/lib/constants";
 import { getMessages } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
@@ -19,7 +19,7 @@ export default async function NewInvoicePage({
 }: {
   searchParams: Promise<{ wedding?: string; error?: string; notice?: string }>;
 }) {
-  const profile = await requireAdmin();
+  const profile = await requireManager();
   const locale = await getLocale();
   const messages = getMessages(locale);
   const params = await searchParams;

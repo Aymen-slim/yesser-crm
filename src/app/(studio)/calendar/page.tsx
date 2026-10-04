@@ -3,7 +3,7 @@ import { MonthJump } from "@/components/client";
 import { CalendarMonth, type CalendarEvent } from "@/components/calendar";
 import { QuickBookForm } from "@/components/record-forms";
 import { Banner, Card, PageHeader, coupleName } from "@/components/ui";
-import { requireUser } from "@/lib/auth";
+import { canManageCrm, requireUser } from "@/lib/auth";
 import { formatDate, isIsoDate, monthRange, one, todayInTunis } from "@/lib/constants";
 import { dateTag, fill, getMessages } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
@@ -21,12 +21,12 @@ export default async function CalendarPage({
   const profile = await requireUser();
   const locale = await getLocale();
   const messages = getMessages(locale);
-  const admin = profile.role === "admin";
+  const manager = canManageCrm(profile);
   const weekdays = Array.from({ length: 7 }, (_, index) =>
     new Intl.DateTimeFormat(dateTag(locale), { weekday: "short", timeZone: "UTC" }).format(new Date(Date.UTC(2024, 0, index + 1))),
   );
   const { month, add, error, notice } = await searchParams;
-  const addDate = admin && add && isIsoDate(add) ? add : null;
+  const addDate = manager && add && isIsoDate(add) ? add : null;
   const today = todayInTunis();
   const thisMonth = today.slice(0, 7);
   const [yearText, monthText] = (
@@ -46,7 +46,7 @@ export default async function CalendarPage({
     .lt("wedding_date", end)
     .neq("status", "cancelled")
     .order("start_time", { nullsFirst: false });
-  if (!admin) {
+  if (!manager) {
     const { data: assigned } = await supabase.from("wedding_assignments").select("wedding_id").eq("member_id", profile.id);
     const ids = (assigned ?? []).map((row) => row.wedding_id);
     query = query.in("id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]);
@@ -56,7 +56,7 @@ export default async function CalendarPage({
     .select("wedding_id, day_date, start_time, label, weddings(status, venue_name, clients(partner_one_name, partner_two_name))")
     .gte("day_date", start)
     .lt("day_date", end);
-  if (!admin) {
+  if (!manager) {
     const { data: assigned } = await supabase.from("wedding_assignments").select("wedding_id").eq("member_id", profile.id);
     const ids = (assigned ?? []).map((row) => row.wedding_id);
     extraQuery = extraQuery.in("wedding_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]);
@@ -135,7 +135,7 @@ export default async function CalendarPage({
             <p className="mt-3 text-xs text-muted">{messages.calendar.hint}</p>
           </Card>
         </div>
-      ) : admin ? (
+      ) : manager ? (
         <p className="mb-4 text-sm text-muted">{messages.calendar.tip}</p>
       ) : null}
       <CalendarMonth
@@ -147,7 +147,7 @@ export default async function CalendarPage({
         addDate={addDate}
         weekdays={weekdays}
         events={Object.fromEntries(byDay)}
-        admin={admin}
+        admin={manager}
         locale={locale}
         labels={messages.calendar}
       />

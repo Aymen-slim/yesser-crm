@@ -4,10 +4,14 @@ import { createClient } from "@/lib/supabase/server";
 
 export type Profile = {
   id: string;
-  role: "admin" | "member";
+  role: "admin" | "assistant" | "member";
   full_name: string;
   active: boolean;
 };
+
+export function canManageCrm(profile: Pick<Profile, "role">) {
+  return profile.role === "admin" || profile.role === "assistant";
+}
 
 export function supabaseConfigured() {
   return Boolean(
@@ -36,7 +40,7 @@ export const requireUser = cache(async (): Promise<Profile> => {
     throw new Error("profile_failed");
   }
 
-  if (!profile || !profile.active) {
+  if (!profile || !profile.active || !["admin", "assistant", "member"].includes(profile.role)) {
     await supabase.auth.signOut();
     redirect("/login?error=account_inactive");
   }
@@ -44,8 +48,14 @@ export const requireUser = cache(async (): Promise<Profile> => {
   return profile as Profile;
 });
 
+export async function requireManager(): Promise<Profile> {
+  const profile = await requireUser();
+  if (!canManageCrm(profile)) redirect("/");
+  return profile;
+}
+
 export async function requireAdmin(): Promise<Profile> {
   const profile = await requireUser();
-  if (profile.role !== "admin") redirect("/");
+  if (profile.role !== "admin") redirect(profile.role === "assistant" ? "/weddings" : "/");
   return profile;
 }

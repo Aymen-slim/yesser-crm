@@ -16,7 +16,7 @@ type ClientName = { partner_one_name: string; partner_two_name: string };
 
 export async function crewJobs(
   supabase: Supabase,
-  range: { start: string; end: string },
+  range: { start: string; end: string } | null,
   memberId?: string,
   unnamed = "Wedding",
 ) {
@@ -24,69 +24,54 @@ export async function crewJobs(
     .from("wedding_assignments")
     .select(
       "member_id, role_on_day, weddings!inner(id, wedding_date, status, clients(partner_one_name, partner_two_name)), assignment_pay(amount_millimes, paid_at)",
+      { count: "exact" },
     )
-    .gte("weddings.wedding_date", range.start)
-    .lt("weddings.wedding_date", range.end)
-    .neq("weddings.status", "cancelled");
+    .neq("weddings.status", "cancelled")
+    .order("wedding_id")
+    .order("member_id");
+  if (range) query = query.gte("weddings.wedding_date", range.start).lt("weddings.wedding_date", range.end);
   if (memberId) query = query.eq("member_id", memberId);
-  const { data } = await query;
 
   const byMember = new Map<string, CrewJob[]>();
-  for (const row of data ?? []) {
-    const wedding = one(row.weddings as unknown as { id: string; wedding_date: string; clients: ClientName | ClientName[] | null });
-    if (!wedding) continue;
-    const client = one(wedding.clients);
-    const pay = one(row.assignment_pay as unknown as { amount_millimes: number; paid_at: string | null } | null);
-    const jobs = byMember.get(row.member_id) ?? [];
-    jobs.push({
-      weddingId: wedding.id,
-      weddingDate: wedding.wedding_date,
-      couple: client ? (client.partner_two_name ? `${client.partner_one_name} & ${client.partner_two_name}` : client.partner_one_name) : unnamed,
-      role: row.role_on_day,
-      pay: pay?.amount_millimes ?? 0,
-      paidAt: pay?.paid_at ?? null,
-    });
-    byMember.set(row.member_id, jobs);
+  const batchSize = 1000;
+  let offset = 0;
+  while (true) {
+    const { data, error, count } = await query.range(offset, offset + batchSize - 1);
+    if (error) {
+      console.error("Crew pay lookup failed:", error.code);
+      throw new Error("crew_pay_failed");
+    }
+    const rows = data ?? [];
+    for (const row of rows) {
+      const wedding = one(row.weddings as unknown as { id: string; wedding_date: string; clients: ClientName | ClientName[] | null });
+      if (!wedding) continue;
+      const client = one(wedding.clients);
+      const pay = one(row.assignment_pay as unknown as { amount_millimes: number; paid_at: string | null } | null);
+      const jobs = byMember.get(row.member_id) ?? [];
+      jobs.push({
+        weddingId: wedding.id,
+        weddingDate: wedding.wedding_date,
+        couple: client ? (client.partner_two_name ? `${client.partner_one_name} & ${client.partner_two_name}` : client.partner_one_name) : unnamed,
+        role: row.role_on_day,
+        pay: pay?.amount_millimes ?? 0,
+        paidAt: pay?.paid_at ?? null,
+      });
+      byMember.set(row.member_id, jobs);
+    }
+    offset += rows.length;
+    if (!rows.length || (count != null ? offset >= count : rows.length < batchSize)) break;
   }
-  for (const jobs of byMember.values()) jobs.sort((a, b) => a.weddingDate.localeCompare(b.weddingDate));
+  for (const jobs of byMember.values()) jobs.sort((a, b) => a.weddingDate.localeCompare(b.weddingDate) || a.weddingId.localeCompare(b.weddingId));
   return byMember;
 }
 
 export async function memberJobs(
   supabase: Supabase,
-  range: { start: string; end: string },
+  range: { start: string; end: string } | null,
   memberId: string,
   unnamed = "Wedding",
 ) {
-  const { data } = await supabase
-    .from("wedding_assignments")
-    .select(
-      "member_id, role_on_day, weddings!inner(id, wedding_date, status, clients(partner_one_name, partner_two_name)), assignment_pay(amount_millimes, paid_at)",
-    )
-    .eq("member_id", memberId)
-    .neq("weddings.status", "cancelled");
-
-  const jobs: CrewJob[] = [];
-  for (const row of data ?? []) {
-    const wedding = one(row.weddings as unknown as { id: string; wedding_date: string; clients: ClientName | ClientName[] | null });
-    if (!wedding) continue;
-    const client = one(wedding.clients);
-    const pay = one(row.assignment_pay as unknown as { amount_millimes: number; paid_at: string | null } | null);
-    const paidAt = pay?.paid_at ?? null;
-    const workedThen = wedding.wedding_date >= range.start && wedding.wedding_date < range.end;
-    const paidThen = Boolean(paidAt && paidAt >= range.start && paidAt < range.end);
-    if (!workedThen && !paidThen) continue;
-    jobs.push({
-      weddingId: wedding.id,
-      weddingDate: wedding.wedding_date,
-      couple: client ? (client.partner_two_name ? `${client.partner_one_name} & ${client.partner_two_name}` : client.partner_one_name) : unnamed,
-      role: row.role_on_day,
-      pay: pay?.amount_millimes ?? 0,
-      paidAt,
-    });
-  }
-  jobs.sort((a, b) => a.weddingDate.localeCompare(b.weddingDate));
-  return jobs;
+  return (await crewJobs(supabase, range, memberId, unnamed)).get(memberId) ?? [];
 }
 
 export function payTotals(jobs: CrewJob[]) {

@@ -11,7 +11,7 @@ import {
   TableCard,
   coupleName,
 } from "@/components/ui";
-import { requireUser } from "@/lib/auth";
+import { canManageCrm, requireUser } from "@/lib/auth";
 import { PAGE_SIZE, WEDDING_STATUSES, formatDate, one } from "@/lib/constants";
 import { fill, getMessages, term } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
@@ -33,7 +33,7 @@ export default async function WeddingsPage({
   const page = Math.max(1, Number(params.page) || 1);
   const from = (page - 1) * PAGE_SIZE;
   const status = WEDDING_STATUSES.find((value) => value === params.status);
-  const admin = profile.role === "admin";
+  const manager = canManageCrm(profile);
   const supabase = await createClient();
 
   let query = supabase
@@ -42,7 +42,7 @@ export default async function WeddingsPage({
     .order("wedding_date", { ascending: false })
     .range(from, from + PAGE_SIZE - 1);
   if (status) query = query.eq("status", status);
-  if (!admin) {
+  if (!manager) {
     const { data: assigned } = await supabase
       .from("wedding_assignments")
       .select("wedding_id")
@@ -53,8 +53,8 @@ export default async function WeddingsPage({
 
   const [list, clients, packages] = await Promise.all([
     query,
-    admin ? supabase.from("clients").select("id, partner_one_name, partner_two_name").order("partner_one_name") : Promise.resolve({ data: [] }),
-    admin ? supabase.from("packages").select("id, name").eq("active", true).order("name") : Promise.resolve({ data: [] }),
+    manager ? supabase.from("clients").select("id, partner_one_name, partner_two_name").order("partner_one_name") : Promise.resolve({ data: [] }),
+    manager ? supabase.from("packages").select("id, name").eq("active", true).order("name") : Promise.resolve({ data: [] }),
   ]);
   const weddingIds = (list.data ?? []).map((wedding) => wedding.id);
   const [extraDays, extraPlaces] = weddingIds.length
@@ -78,9 +78,9 @@ export default async function WeddingsPage({
 
   return (
     <div>
-      <PageHeader title={messages.weddings.title} subtitle={admin ? messages.weddings.subtitleAdmin : messages.weddings.subtitleMember} />
+      <PageHeader title={messages.weddings.title} subtitle={manager ? messages.weddings.subtitleAdmin : messages.weddings.subtitleMember} />
       <Banner error={params.error} notice={params.notice} />
-      {admin ? (
+      {manager ? (
         <Disclosure label={messages.weddings.newWedding} open={Boolean(params.error)}>
           <WeddingForm clients={clients.data ?? []} packages={packages.data ?? []} />
         </Disclosure>

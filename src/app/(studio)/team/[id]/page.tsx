@@ -6,14 +6,15 @@ import {
   Banner,
   EmptyState,
   Field,
+  FilterTabs,
   InstagramLink,
   MonthNav,
   PageHeader,
   Section,
   StatCard,
 } from "@/components/ui";
-import { deleteMember, grantMemberLogin, setCrewPaid, setMemberActive, updateMember, updateMemberLogin } from "@/lib/actions";
-import { requireAdmin } from "@/lib/auth";
+import { deleteMember, grantMemberLogin, setCrewPaid, setMemberActive, updateMember, updateMemberLogin, updateMemberRole } from "@/lib/actions";
+import { requireManager } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatDate, monthRange, one, todayInTunis } from "@/lib/constants";
 import { fill, getMessages } from "@/lib/i18n";
@@ -27,19 +28,21 @@ export default async function TeamMemberPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; notice?: string; month?: string }>;
+  searchParams: Promise<{ error?: string; notice?: string; month?: string; view?: string }>;
 }) {
-  const profile = await requireAdmin();
+  const profile = await requireManager();
+  const admin = profile.role === "admin";
   const locale = await getLocale();
   const messages = getMessages(locale);
   const { id } = await params;
   const query = await searchParams;
   const thisMonth = todayInTunis().slice(0, 7);
   const month = parseMonth(query.month, thisMonth, locale);
-  const range = monthRange(month.year, month.month);
+  const monthly = query.view === "month" || (query.view !== "all" && Boolean(query.month));
+  const range = monthly ? monthRange(month.year, month.month) : null;
   const supabase = await createClient();
 
-  const [{ data: member }, jobs] = await Promise.all([
+  const [{ data: member, error: memberError }, jobs] = await Promise.all([
     supabase
       .from("profiles")
       .select("id, full_name, phone, role, active, job, instagram, has_login, member_rates(rate_millimes)")
@@ -47,10 +50,14 @@ export default async function TeamMemberPage({
       .maybeSingle(),
     memberJobs(supabase, range, id, messages.common.wedding),
   ]);
+  if (memberError) {
+    console.error("Team member lookup failed:", memberError.code);
+    throw new Error("team_failed");
+  }
   if (!member) notFound();
 
   let loginEmail = "";
-  if (member.has_login) {
+  if (admin && member.has_login) {
     const admin = createAdminClient();
     const { data } = await admin.auth.admin.getUserById(member.id);
     loginEmail = data.user?.email ?? "";
@@ -58,18 +65,19 @@ export default async function TeamMemberPage({
   const isSelf = profile.id === member.id;
   const pay = payTotals(jobs);
   const rate = one(member.member_rates as { rate_millimes: number } | { rate_millimes: number }[] | null)?.rate_millimes ?? 0;
-  const here = `/team/${id}${month.key === thisMonth ? "" : `?month=${month.key}`}`;
+  const monthQuery = monthly ? `?month=${month.key}` : "";
+  const here = `/team/${id}${monthQuery}`;
 
   return (
     <div>
       <PageHeader
-        back={{ href: "/team", label: messages.nav.team }}
+        back={{ href: `/team${monthQuery}`, label: messages.nav.team }}
         title={member.full_name}
         subtitle={
           <span className="flex flex-wrap items-center gap-2">
             {member.job ? <span>{member.job}</span> : null}
             <InstagramLink handle={member.instagram} />
-            {member.role === "admin" ? <Badge tone="violet">{messages.terms.admin}</Badge> : null}
+            {member.role === "admin" ? <Badge tone="violet">{messages.terms.admin}</Badge> : member.role === "assistant" ? <Badge tone="blue">{messages.terms.assistant}</Badge> : null}
             {member.has_login ? <Badge tone="blue">{messages.team.hasLogin}</Badge> : <Badge>{messages.team.noLogin}</Badge>}
             {member.active ? null : <Badge>{messages.team.inactive}</Badge>}
           </span>
@@ -77,10 +85,20 @@ export default async function TeamMemberPage({
       />
       <Banner error={query.error} notice={query.notice} />
 
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-display text-xl font-semibold tracking-tight">{month.label}</h2>
-        <MonthNav path={`/team/${id}`} prev={month.prev} next={month.next} isCurrent={month.key === thisMonth} />
-      </div>
+      <FilterTabs
+        active={monthly ? "month" : "all"}
+        items={[
+          { value: "all", label: messages.team.allWeddings, href: `/team/${id}` },
+          { value: "month", label: messages.team.monthly, href: `/team/${id}?month=${month.key}` },
+        ]}
+      />
+      <p className="mb-5 text-sm text-muted">{messages.team.payScopeHint}</p>
+      {monthly ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-display text-xl font-semibold tracking-tight">{month.label}</h2>
+          <MonthNav path={`/team/${id}`} currentHref={`/team/${id}?view=month`} prev={month.prev} next={month.next} isCurrent={month.key === thisMonth} />
+        </div>
+      ) : null}
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label={messages.team.weddings} value={jobs.length} />
         <StatCard label={messages.team.earned} value={formatTnd(pay.total)} />
@@ -89,9 +107,9 @@ export default async function TeamMemberPage({
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
-        <Section title={messages.team.weddingsMonth}>
+        <Section title={monthly ? fill(messages.team.weddingsMonth, { month: month.label }) : messages.team.allWeddings}>
           {jobs.length === 0 ? (
-            <EmptyState>{fill(messages.team.notAssigned, { month: month.label })}</EmptyState>
+            <EmptyState>{monthly ? fill(messages.team.notAssigned, { month: month.label }) : messages.team.notAssignedAll}</EmptyState>
           ) : (
             <ul className="divide-y divide-line">
               {jobs.map((job) => (
@@ -129,28 +147,43 @@ export default async function TeamMemberPage({
 
         <div className="flex flex-col gap-6">
           <Section title={messages.team.details}>
-            <form action={updateMember} className="grid gap-4">
-              <input type="hidden" name="id" value={member.id} />
-              <Field label={messages.team.name}>
-                <input name="full_name" defaultValue={member.full_name} required />
-              </Field>
-              <Field label={messages.team.job}>
-                <input name="job" defaultValue={member.job} />
-              </Field>
-              <Field label={messages.team.instagram}>
-                <input name="instagram" defaultValue={member.instagram ? `@${member.instagram}` : ""} placeholder="@username" />
-              </Field>
-              <Field label={messages.team.phone}>
-                <input name="phone" type="tel" defaultValue={member.phone ?? ""} />
-              </Field>
-              <Field label={messages.team.rate}>
-                <input name="rate" inputMode="decimal" defaultValue={rate ? (rate / 1000).toFixed(3) : ""} placeholder="0.000" />
-              </Field>
-              <SubmitButton className="self-start" pendingLabel={messages.common.saving}>{messages.common.save}</SubmitButton>
+            <form action={updateMember}>
+              <fieldset disabled={!admin} className="grid gap-4">
+                <input type="hidden" name="id" value={member.id} />
+                <Field label={messages.team.name}>
+                  <input name="full_name" defaultValue={member.full_name} required />
+                </Field>
+                <Field label={messages.team.job}>
+                  <input name="job" defaultValue={member.job} />
+                </Field>
+                <Field label={messages.team.instagram}>
+                  <input name="instagram" defaultValue={member.instagram ? `@${member.instagram}` : ""} placeholder="@username" />
+                </Field>
+                <Field label={messages.team.phone}>
+                  <input name="phone" type="tel" defaultValue={member.phone ?? ""} />
+                </Field>
+                <Field label={messages.team.rate}>
+                  <input name="rate" inputMode="decimal" defaultValue={rate ? (rate / 1000).toFixed(3) : ""} placeholder="0.000" />
+                </Field>
+                {admin ? <SubmitButton className="self-start" pendingLabel={messages.common.saving}>{messages.common.save}</SubmitButton> : null}
+              </fieldset>
             </form>
           </Section>
 
-          <Section title={messages.team.account}>
+          {admin ? <Section title={messages.team.account}>
+            {!isSelf && member.role !== "admin" ? (
+              <form action={updateMemberRole} className="mb-4 grid gap-4 border-b border-line pb-4">
+                <input type="hidden" name="id" value={member.id} />
+                <Field label={messages.team.userRole}>
+                  <select name="role" defaultValue={member.role}>
+                    <option value="member">{messages.terms.member}</option>
+                    <option value="assistant">{messages.terms.assistant}</option>
+                  </select>
+                  <span className="text-xs text-muted">{messages.team.roleHint}</span>
+                </Field>
+                <SubmitButton className="self-start" pendingLabel={messages.common.saving}>{messages.common.save}</SubmitButton>
+              </form>
+            ) : null}
             {loginEmail ? (
               <form action={updateMemberLogin} autoComplete="off" className="grid gap-4">
                 <input type="hidden" name="id" value={member.id} />
@@ -202,7 +235,7 @@ export default async function TeamMemberPage({
                 </p>
               </div>
             )}
-          </Section>
+          </Section> : null}
         </div>
       </div>
     </div>

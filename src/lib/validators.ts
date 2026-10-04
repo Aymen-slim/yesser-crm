@@ -276,6 +276,12 @@ export const assignmentUpdateSchema = z.object({
   pay: optionalMoney,
 });
 
+export const crewPaidSchema = z.object({
+  wedding_id: z.string().uuid(),
+  member_id: z.string().uuid(),
+  paid: z.enum(["true", "false"]),
+});
+
 export const expenseSchema = z.object({
   wedding_id: z.string().uuid().or(z.literal("")).default(""),
   category: z.string().trim().min(1, "err_category"),
@@ -299,6 +305,7 @@ export const noteSchema = z.object({
 export const memberSchema = z
   .object({
     full_name: z.string().trim().min(1, "err_name"),
+    role: z.enum(["member", "assistant"]).default("member"),
     job: z.string().trim().max(60).default(""),
     instagram,
     phone: phone.or(z.literal("")).default(""),
@@ -320,6 +327,11 @@ export const memberUpdateSchema = z.object({
   instagram,
   phone: phone.or(z.literal("")).default(""),
   rate: optionalMoney,
+});
+
+export const memberRoleSchema = z.object({
+  id: z.string().uuid(),
+  role: z.enum(["member", "assistant"]),
 });
 
 export const memberLoginSchema = z.object({

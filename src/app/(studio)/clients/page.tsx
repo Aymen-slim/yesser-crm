@@ -13,7 +13,7 @@ import {
   TableCard,
   coupleName,
 } from "@/components/ui";
-import { requireAdmin } from "@/lib/auth";
+import { requireManager } from "@/lib/auth";
 import { PAGE_SIZE, formatDate } from "@/lib/constants";
 import { fill, getMessages, term } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
@@ -67,7 +67,7 @@ export default async function CouplesPage({
 }: {
   searchParams: Promise<{ error?: string; notice?: string; page?: string; tab?: string; q?: string; city?: string; from?: string; to?: string }>;
 }) {
-  await requireAdmin();
+  await requireManager();
   const locale = await getLocale();
   const messages = getMessages(locale);
   const params = await searchParams;

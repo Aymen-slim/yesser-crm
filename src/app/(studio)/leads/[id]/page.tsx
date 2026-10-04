@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ConvertForm, LeadForm, NoteForm } from "@/components/record-forms";
 import { Banner, ContactLinks, EmptyState, PageHeader, Section, StatusBadge, coupleName } from "@/components/ui";
-import { requireAdmin } from "@/lib/auth";
+import { requireManager } from "@/lib/auth";
 import { formatDate } from "@/lib/constants";
 import { fill, getMessages } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
@@ -15,7 +15,7 @@ export default async function LeadPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ error?: string; notice?: string }>;
 }) {
-  await requireAdmin();
+  await requireManager();
   const locale = await getLocale();
   const messages = getMessages(locale);
   const { id } = await params;

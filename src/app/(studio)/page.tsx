@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { EarningsChart } from "@/components/chart";
 import { EmptyState, Meter, Section, StatCard, StatusBadge, coupleName } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
@@ -17,6 +18,7 @@ export default async function DashboardPage({
   searchParams: Promise<{ month?: string; day?: string; view?: string }>;
 }) {
   const profile = await requireUser();
+  if (profile.role === "assistant") redirect("/weddings");
   const params = await searchParams;
   const locale = await getLocale();
   const messages = getMessages(locale);

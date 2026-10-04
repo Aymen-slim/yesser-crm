@@ -3,7 +3,7 @@ import { ConfirmSubmit } from "@/components/client";
 import { PackageForm } from "@/components/record-forms";
 import { Banner, PageHeader, Section } from "@/components/ui";
 import { deletePackage } from "@/lib/actions";
-import { requireAdmin } from "@/lib/auth";
+import { requireManager } from "@/lib/auth";
 import { fill, getMessages } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
 import { formatTnd } from "@/lib/money";
@@ -16,7 +16,7 @@ export default async function PackagePage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ error?: string }>;
 }) {
-  await requireAdmin();
+  await requireManager();
   const messages = getMessages(await getLocale());
   const { id } = await params;
   const { error } = await searchParams;
