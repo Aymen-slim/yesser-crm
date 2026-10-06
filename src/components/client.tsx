@@ -7,7 +7,7 @@ import { useState } from "react";
 import { useFormStatus } from "react-dom";
 import { setLocale } from "@/lib/actions";
 import type { Locale } from "@/lib/i18n";
-import { normalizePhone } from "@/lib/constants";
+import { isIsoDate, normalizePhone, type DashboardView } from "@/lib/constants";
 
 export function PhoneInput({
   name,
@@ -49,6 +49,41 @@ export function PrintButton({ label }: { label: string }) {
     <button type="button" onClick={() => window.print()}>
       {label}
     </button>
+  );
+}
+
+export function DashboardPeriodField({ view, value, label }: { view: DashboardView; value: string; label: string }) {
+  const router = useRouter();
+  return (
+    <div className="w-44 shrink-0">
+      <input
+        type={view === "year" ? "number" : view === "day" ? "date" : "month"}
+        inputMode={view === "year" ? "numeric" : undefined}
+        aria-label={label}
+        min={view === "year" ? 1970 : undefined}
+        max={view === "year" ? 2100 : undefined}
+        defaultValue={value}
+        key={`${view}-${value}`}
+        className="min-h-11"
+        onChange={(event) => {
+          const next = event.target.value;
+          if (view === "year") {
+            if (!/^[1-9]\d{3}$/.test(next)) return;
+            const year = Number(next);
+            if (year < 1970 || year > 2100) return;
+            router.push(`/?view=year&period=${next}`);
+            return;
+          }
+          if (view === "day") {
+            if (!isIsoDate(next)) return;
+            router.push(`/?view=day&period=${next}`);
+            return;
+          }
+          if (!/^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(next)) return;
+          router.push(`/?view=month&period=${next}`);
+        }}
+      />
+    </div>
   );
 }
 

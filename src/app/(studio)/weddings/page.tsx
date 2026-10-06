@@ -12,7 +12,7 @@ import {
   coupleName,
 } from "@/components/ui";
 import { canManageCrm, requireUser } from "@/lib/auth";
-import { PAGE_SIZE, WEDDING_STATUSES, formatDate, one } from "@/lib/constants";
+import { PAGE_SIZE, WEDDING_STATUSES, formatDate, one, sortByWeddingDate, todayInTunis, type WeddingDateSort } from "@/lib/constants";
 import { fill, getMessages, term } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
 import { createClient } from "@/lib/supabase/server";
@@ -24,7 +24,7 @@ export async function generateMetadata() {
 export default async function WeddingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; notice?: string; page?: string; status?: string }>;
+  searchParams: Promise<{ error?: string; notice?: string; page?: string; status?: string; sort?: string }>;
 }) {
   const profile = await requireUser();
   const locale = await getLocale();
@@ -33,30 +33,60 @@ export default async function WeddingsPage({
   const page = Math.max(1, Number(params.page) || 1);
   const from = (page - 1) * PAGE_SIZE;
   const status = WEDDING_STATUSES.find((value) => value === params.status);
+  const sort: WeddingDateSort = params.sort === "farthest" || params.sort === "oldest" ? params.sort : "nearest";
   const manager = canManageCrm(profile);
   const supabase = await createClient();
+  const today = todayInTunis();
 
-  let query = supabase
-    .from("weddings")
-    .select("id, wedding_date, start_time, venue_name, city, status, clients(partner_one_name, partner_two_name), packages(name)", { count: "exact" })
-    .order("wedding_date", { ascending: false })
-    .range(from, from + PAGE_SIZE - 1);
-  if (status) query = query.eq("status", status);
+  let dates = supabase.from("weddings").select("id, wedding_date").order("id");
+  if (status) dates = dates.eq("status", status);
   if (!manager) {
     const { data: assigned } = await supabase
       .from("wedding_assignments")
       .select("wedding_id")
       .eq("member_id", profile.id);
     const ids = (assigned ?? []).map((row) => row.wedding_id);
-    query = query.in("id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]);
+    dates = dates.in("id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]);
   }
 
+  const dated: { id: string; wedding_date: string }[] = [];
+  const batchSize = 1000;
+  let offset = 0;
+  while (true) {
+    const { data, error } = await dates.range(offset, offset + batchSize - 1);
+    if (error) {
+      console.error("Wedding list failed:", error.code);
+      throw new Error("weddings_failed");
+    }
+    const rows = data ?? [];
+    dated.push(...rows);
+    offset += rows.length;
+    if (rows.length < batchSize) break;
+  }
+  const ordered = sortByWeddingDate(dated, sort, today);
+  const pageIds = ordered.slice(from, from + PAGE_SIZE).map((row) => row.id);
+  const listQuery = pageIds.length
+    ? supabase
+        .from("weddings")
+        .select("id, wedding_date, start_time, venue_name, city, status, clients(partner_one_name, partner_two_name), packages(name)")
+        .in("id", pageIds)
+    : Promise.resolve({ data: [] });
+
   const [list, clients, packages] = await Promise.all([
-    query,
+    listQuery,
     manager ? supabase.from("clients").select("id, partner_one_name, partner_two_name").order("partner_one_name") : Promise.resolve({ data: [] }),
     manager ? supabase.from("packages").select("id, name").eq("active", true).order("name") : Promise.resolve({ data: [] }),
   ]);
-  const weddingIds = (list.data ?? []).map((wedding) => wedding.id);
+  if ("error" in list && list.error) {
+    console.error("Wedding list failed:", list.error.code);
+    throw new Error("weddings_failed");
+  }
+  const byId = new Map((list.data ?? []).map((wedding) => [wedding.id, wedding]));
+  const weddings = pageIds.flatMap((id) => {
+    const wedding = byId.get(id);
+    return wedding ? [wedding] : [];
+  });
+  const weddingIds = weddings.map((wedding) => wedding.id);
   const [extraDays, extraPlaces] = weddingIds.length
     ? await Promise.all([
         supabase.from("wedding_days").select("wedding_id, day_date, label").in("wedding_id", weddingIds).order("day_date"),
@@ -76,9 +106,24 @@ export default async function WeddingsPage({
     placesByWedding.set(spot.wedding_id, rows);
   }
 
+  const orderSubtitle =
+    sort === "farthest" ? messages.weddings.subtitleFarthest : sort === "oldest" ? messages.weddings.subtitleOldest : messages.weddings.subtitleNearest;
+  const listHref = (next: { status?: string; sort?: WeddingDateSort }) => {
+    const search = new URLSearchParams();
+    const nextStatus = next.status === undefined ? status : next.status;
+    const nextSort = next.sort ?? sort;
+    if (nextStatus) search.set("status", nextStatus);
+    if (nextSort !== "nearest") search.set("sort", nextSort);
+    const query = search.toString();
+    return query ? `/weddings?${query}` : "/weddings";
+  };
+
   return (
     <div>
-      <PageHeader title={messages.weddings.title} subtitle={manager ? messages.weddings.subtitleAdmin : messages.weddings.subtitleMember} />
+      <PageHeader
+        title={messages.weddings.title}
+        subtitle={manager ? orderSubtitle : `${messages.weddings.subtitleMember} ${orderSubtitle}`}
+      />
       <Banner error={params.error} notice={params.notice} />
       {manager ? (
         <Disclosure label={messages.weddings.newWedding} open={Boolean(params.error)}>
@@ -88,9 +133,18 @@ export default async function WeddingsPage({
       <FilterTabs
         active={status ?? "all"}
         items={[
-          { value: "all", label: messages.terms.all, href: "/weddings" },
-          ...WEDDING_STATUSES.map((value) => ({ value, label: term(messages, value), href: `/weddings?status=${value}` })),
+          { value: "all", label: messages.terms.all, href: listHref({ status: "" }) },
+          ...WEDDING_STATUSES.map((value) => ({ value, label: term(messages, value), href: listHref({ status: value }) })),
         ]}
+      />
+      <p className="-mt-2 mb-2 text-xs font-medium text-muted">{messages.weddings.orderByDate}</p>
+      <FilterTabs
+        active={sort}
+        items={(["nearest", "farthest", "oldest"] as const).map((value) => ({
+          value,
+          label: value === "nearest" ? messages.weddings.sortNearest : value === "farthest" ? messages.weddings.sortFarthest : messages.weddings.sortOldest,
+          href: listHref({ sort: value }),
+        }))}
       />
       <TableCard>
         <table>
@@ -104,7 +158,7 @@ export default async function WeddingsPage({
             </tr>
           </thead>
           <tbody>
-            {(list.data ?? []).map((wedding) => {
+            {weddings.map((wedding) => {
               const client = one(wedding.clients);
               const pack = one(wedding.packages);
               return (
@@ -139,13 +193,13 @@ export default async function WeddingsPage({
                 </tr>
               );
             })}
-            {(list.data ?? []).length === 0 ? (
+            {weddings.length === 0 ? (
               <EmptyRow colSpan={5}>{status ? fill(messages.weddings.noneStatus, { status: term(messages, status) }) : messages.weddings.none}</EmptyRow>
             ) : null}
           </tbody>
         </table>
       </TableCard>
-      <Pagination page={page} count={list.count ?? 0} path="/weddings" query={{ status }} />
+      <Pagination page={page} count={ordered.length} path="/weddings" query={{ status, sort: sort === "nearest" ? undefined : sort }} />
     </div>
   );
 }

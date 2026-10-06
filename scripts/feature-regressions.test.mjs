@@ -36,7 +36,7 @@ function load(relative, overrides = {}, moduleCache = cache) {
   return loadedModule.exports;
 }
 
-const { normalizePhone, monthRange, isIsoDate } = load("src/lib/constants.ts");
+const { normalizePhone, monthRange, isIsoDate, resolveDashboardPeriod, sortByWeddingDate, dashboardPeriodInRange } = load("src/lib/constants.ts");
 const { clientSchema, leadSchema, quickBookSchema, contractSchema, parseForm } = load("src/lib/validators.ts");
 const { CalendarMonth } = load("src/components/calendar.tsx");
 const { YesserContract } = load("src/components/yesser-contract.tsx");
@@ -87,6 +87,41 @@ test("server form parsing applies phone validation rather than trusting the brow
   assert.equal(parseForm(clientSchema, form).data.phone, "+33612345678");
   form.set("whatsapp_phone", "invalid");
   assert.equal(parseForm(clientSchema, form).error, "err_phone");
+});
+
+test("dashboard period accepts a month, a year, or a specific date", () => {
+  const today = "2026-10-06";
+  const month = resolveDashboardPeriod("month", "2024-03", today, "en");
+  assert.equal(month.view, "month");
+  assert.equal(month.start, "2024-03-01");
+  assert.equal(month.end, "2024-04-01");
+  assert.equal(month.days, 31);
+  assert.equal(month.isCurrent, false);
+  assert.equal(resolveDashboardPeriod("month", "nope", today).key, "2026-10");
+  const year = resolveDashboardPeriod("year", "2025", today);
+  assert.equal(year.start, "2025-01-01");
+  assert.equal(year.end, "2026-01-01");
+  assert.equal(resolveDashboardPeriod("year", "1800", today).key, "2026");
+  const day = resolveDashboardPeriod("day", "2027-02-29", today);
+  assert.equal(day.key, "2026-10-06");
+  const leap = resolveDashboardPeriod("day", "2028-02-29", today);
+  assert.equal(leap.start, "2028-02-29");
+  assert.equal(leap.end, "2028-03-01");
+  assert.equal(dashboardPeriodInRange("year", "1969"), false);
+  assert.equal(dashboardPeriodInRange("month", "2024-03"), true);
+});
+
+test("wedding dates sort nearest, farthest, and oldest", () => {
+  const rows = [
+    { id: "a", wedding_date: "2026-01-01" },
+    { id: "b", wedding_date: "2026-10-20" },
+    { id: "c", wedding_date: "2026-10-06" },
+    { id: "d", wedding_date: "2027-06-01" },
+  ];
+  const ids = (sort) => sortByWeddingDate(rows, sort, "2026-10-06").map((row) => row.id).join(",");
+  assert.equal(ids("nearest"), "c,b,d,a");
+  assert.equal(ids("farthest"), "d,b,c,a");
+  assert.equal(ids("oldest"), "a,c,b,d");
 });
 
 test("calendar month boundaries handle leap years and December rollover", () => {
@@ -369,7 +404,7 @@ test("assistant role is validated for new accounts and role updates", () => {
 test("assistant dashboard requests redirect before any data is loaded", async () => {
   const { default: DashboardPage } = load("src/app/(studio)/page.tsx", {
     "next/navigation": { redirect(path) { throw new Error(`REDIRECT:${path}`); } },
-    "@/components/chart": {}, "@/components/ui": {},
+    "@/components/chart": {}, "@/components/ui": {}, "@/components/client": {},
     "@/lib/auth": { requireUser: async () => ({ role: "assistant" }) },
     "@/lib/supabase/server": { createClient: async () => assert.fail("Dashboard data must not be queried") },
     "@/lib/locale": { getLocale: async () => assert.fail("Dashboard must redirect immediately") },

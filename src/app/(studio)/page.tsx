@@ -1,9 +1,18 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { DashboardPeriodField } from "@/components/client";
 import { EarningsChart } from "@/components/chart";
 import { EmptyState, Meter, Section, StatCard, StatusBadge, coupleName } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
-import { calendarYear, formatDate, monthRange, one, todayInTunis } from "@/lib/constants";
+import {
+  type DashboardView,
+  calendarYear,
+  dashboardPeriodInRange,
+  formatDate,
+  one,
+  resolveDashboardPeriod,
+  todayInTunis,
+} from "@/lib/constants";
 import { dateTag, fill, getMessages } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
 import { formatTnd } from "@/lib/money";
@@ -15,7 +24,7 @@ type ClientName = { partner_one_name: string; partner_two_name: string };
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string; day?: string; view?: string }>;
+  searchParams: Promise<{ month?: string; day?: string; view?: string; period?: string }>;
 }) {
   const profile = await requireUser();
   if (profile.role === "assistant") redirect("/weddings");
@@ -25,29 +34,32 @@ export default async function DashboardPage({
   const supabase = await createClient();
   const today = todayInTunis();
   const admin = profile.role === "admin";
-  const view = params.view === "year" ? "year" : "month";
-  const [yearText, monthText] = today.split("-");
-  const year = Number(yearText);
-  const month = Number(monthText);
-  const thisMonth = monthRange(year, month);
-  const months = calendarYear(year, locale);
-  const rangeStart = view === "year" ? `${year}-01-01` : thisMonth.start;
-  const periodEnd = view === "year" ? `${year + 1}-01-01` : thisMonth.end;
+  const period = resolveDashboardPeriod(params.view, params.period, today, locale);
+  const view = period.view;
+  const yearText = String(period.year);
+  const monthText = String(period.month).padStart(2, "0");
+  const months = calendarYear(period.year, locale);
+  const rangeStart = period.start;
+  const periodEnd = period.end;
   const buckets =
     view === "year"
       ? months.map((item) => ({ key: item.key, label: item.label }))
-      : Array.from({ length: thisMonth.days }, (_, index) => {
-          const day = index + 1;
-          return { key: `${yearText}-${monthText}-${String(day).padStart(2, "0")}`, label: String(day) };
-        });
+      : view === "day"
+        ? [{ key: period.key, label: String(Number(period.key.slice(8, 10))) }]
+        : Array.from({ length: period.days }, (_, index) => {
+            const day = index + 1;
+            return { key: `${yearText}-${monthText}-${String(day).padStart(2, "0")}`, label: String(day) };
+          });
   const selectedKey =
-    view === "year"
-      ? months.some((month) => month.key === params.month)
-        ? params.month
-        : undefined
-      : buckets.some((bucket) => bucket.key === params.day)
-        ? params.day
-        : undefined;
+    view === "day"
+      ? period.key
+      : view === "year"
+        ? months.some((item) => item.key === params.month)
+          ? params.month
+          : undefined
+        : buckets.some((bucket) => bucket.key === params.day)
+          ? params.day
+          : undefined;
   const selectedLabel = selectedKey
     ? view === "year"
       ? parseMonth(selectedKey, selectedKey, locale).label
@@ -88,9 +100,10 @@ export default async function DashboardPage({
           .from("payments")
           .select("paid_at, amount_millimes, label, wedding_id, weddings(clients(partner_one_name, partner_two_name))")
           .gte("paid_at", rangeStart)
+          .lt("paid_at", periodEnd)
           .not("paid_at", "is", null)
       : skip,
-    admin ? supabase.from("expenses").select("spent_on, amount_millimes, category, wedding_id").gte("spent_on", rangeStart) : skip,
+    admin ? supabase.from("expenses").select("spent_on, amount_millimes, category, wedding_id").gte("spent_on", rangeStart).lt("spent_on", periodEnd) : skip,
     admin ? supabase.from("payments").select("amount_millimes").is("paid_at", null) : skip,
     supabase
       .from("weddings")
@@ -99,7 +112,7 @@ export default async function DashboardPage({
       .lt("wedding_date", periodEnd)
       .neq("status", "cancelled"),
     admin
-      ? supabase.from("assignment_pay").select("paid_at, amount_millimes, member_id").gte("paid_at", rangeStart).not("paid_at", "is", null)
+      ? supabase.from("assignment_pay").select("paid_at, amount_millimes, member_id").gte("paid_at", rangeStart).lt("paid_at", periodEnd).not("paid_at", "is", null)
       : skip,
     admin ? crewJobs(supabase, { start: rangeStart, end: periodEnd }, undefined, messages.common.wedding) : Promise.resolve(new Map<string, CrewJob[]>()),
     admin ? supabase.from("profiles").select("id, full_name, job") : skip,
@@ -205,13 +218,41 @@ export default async function DashboardPage({
       ].sort((a, b) => b.date.localeCompare(a.date) || a.label.localeCompare(b.label))
     : [];
   const outstanding = (unpaid.data ?? []).reduce((sum, row) => sum + row.amount_millimes, 0);
-  const earnedLabel = view === "year" ? messages.dash.earnedYear : messages.dash.earnedMonth;
-  const weddingsLabel = view === "year" ? messages.dash.weddingsYear : messages.dash.weddingsMonth;
+  const earnedLabel = fill(messages.dash.earnedIn, { period: period.label });
+  const weddingsLabel = fill(messages.dash.weddingsIn, { period: period.label });
   const chartCopy = {
     ...messages.chart,
-    title: view === "year" ? messages.chart.titleYear : messages.chart.titleMonth,
+    title: period.label,
     aria: view === "year" ? messages.chart.aria : messages.chart.ariaMonth,
   };
+  const periodQuery = period.isCurrent ? "" : `&period=${period.key}`;
+  const viewHref = (target: DashboardView) => {
+    const value =
+      target === "year"
+        ? String(period.year)
+        : target === "month"
+          ? view === "day"
+            ? period.key.slice(0, 7)
+            : view === "year"
+              ? String(period.year) === today.slice(0, 4)
+                ? today.slice(0, 7)
+                : `${period.year}-01`
+              : period.key
+          : view === "day"
+            ? period.key
+            : view === "month"
+              ? period.key === today.slice(0, 7)
+                ? today
+                : `${period.key}-01`
+              : String(period.year) === today.slice(0, 4)
+                ? today
+                : `${period.year}-01-01`;
+    const currentValue = target === "year" ? today.slice(0, 4) : target === "day" ? today : today.slice(0, 7);
+    return value === currentValue ? (target === "month" ? "/?view=month" : `/?view=${target}`) : `/?view=${target}&period=${value}`;
+  };
+  const clearHref = view === "year" ? `/?view=year${periodQuery}` : `/?view=month${periodQuery}`;
+  const calendarMonth = view === "year" ? `${period.key}-01` : view === "day" ? period.key.slice(0, 7) : period.key;
+  const pickLabel = view === "year" ? messages.dash.pickYear : view === "day" ? messages.dash.pickDate : messages.dash.pickMonth;
 
   return (
     <div>
@@ -221,23 +262,38 @@ export default async function DashboardPage({
           <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight md:text-5xl">
             {fill(messages.dash.hello, { name: profile.full_name.split(" ")[0] })}
           </h1>
-          <div className="mt-5 inline-flex rounded-full bg-track p-1 text-sm" role="group" aria-label={messages.dash.period}>
-            <Link
-              href="/?view=month"
-              prefetch={false}
-              aria-current={view === "month" ? "page" : undefined}
-              className={`rounded-full px-4 py-2 no-underline ${view === "month" ? "bg-ink font-medium text-white" : "text-muted hover:text-ink"}`}
-            >
-              {messages.dash.viewMonth}
-            </Link>
-            <Link
-              href="/?view=year"
-              prefetch={false}
-              aria-current={view === "year" ? "page" : undefined}
-              className={`rounded-full px-4 py-2 no-underline ${view === "year" ? "bg-ink font-medium text-white" : "text-muted hover:text-ink"}`}
-            >
-              {messages.dash.viewYear}
-            </Link>
+          <div className="mt-5 flex flex-col gap-3">
+            <div className="inline-flex w-fit rounded-full bg-track p-1 text-sm" role="group" aria-label={messages.dash.period}>
+              {(["month", "year", "day"] as const).map((item) => (
+                <Link
+                  key={item}
+                  href={viewHref(item)}
+                  prefetch={false}
+                  aria-current={view === item ? "page" : undefined}
+                  className={`rounded-full px-4 py-2 no-underline ${view === item ? "bg-ink font-medium text-white" : "text-muted hover:text-ink"}`}
+                >
+                  {item === "month" ? messages.dash.viewMonth : item === "year" ? messages.dash.viewYear : messages.dash.viewDay}
+                </Link>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {dashboardPeriodInRange(view, period.prev) ? (
+                <Link className="button ghost no-underline" href={`/?view=${view}&period=${period.prev}`} prefetch={false}>
+                  ← {messages.common.previous}
+                </Link>
+              ) : null}
+              <DashboardPeriodField view={view} value={period.key} label={pickLabel} />
+              {dashboardPeriodInRange(view, period.next) ? (
+                <Link className="button ghost no-underline" href={`/?view=${view}&period=${period.next}`} prefetch={false}>
+                  {messages.common.next} →
+                </Link>
+              ) : null}
+              {period.isCurrent ? null : (
+                <Link className="button ghost no-underline" href={view === "month" ? "/?view=month" : `/?view=${view}`} prefetch={false}>
+                  {messages.dash.today}
+                </Link>
+              )}
+            </div>
           </div>
         </div>
         {admin ? (
@@ -290,21 +346,25 @@ export default async function DashboardPage({
             <StatCard label={messages.dash.openLeads} value={leads.count ?? 0} href="/clients?tab=leads" />
           </>
         ) : null}
-        <StatCard label={weddingsLabel} value={monthWeddings.count ?? 0} href="/calendar" />
+        <StatCard label={weddingsLabel} value={monthWeddings.count ?? 0} href={`/calendar?month=${calendarMonth}`} />
       </div>
 
-      {admin ? (
+      {admin && view !== "day" ? (
         <EarningsChart
           months={chart}
           copy={chartCopy}
-          hrefFor={(key) => (view === "year" ? `/?view=year&month=${key}` : `/?view=month&day=${key}`)}
+          hrefFor={(key) => (view === "year" ? `/?view=year${periodQuery}&month=${key}` : `/?view=month${periodQuery}&day=${key}`)}
         />
       ) : null}
 
       {admin && selectedLabel && selectedChart ? (
         <Section
           title={selectedLabel}
-          action={<Link href={`/?view=${view}`} className="text-sm text-muted">{view === "year" ? messages.chart.allYear : messages.chart.allMonth}</Link>}
+          action={
+            <Link href={view === "day" ? `/?view=month&period=${period.key.slice(0, 7)}` : clearHref} className="text-sm text-muted">
+              {view === "year" ? messages.chart.allYear : messages.chart.allMonth}
+            </Link>
+          }
           className="mb-6"
         >
           <dl className="mb-5 flex flex-wrap gap-6 text-sm">
@@ -327,7 +387,7 @@ export default async function DashboardPage({
             <div>
               <h3 className="mb-2 text-sm font-semibold">{messages.chart.received}</h3>
               {received.length === 0 ? (
-                <EmptyState>{view === "month" ? messages.chart.emptyReceivedDay : messages.chart.emptyReceived}</EmptyState>
+                <EmptyState>{view === "year" ? messages.chart.emptyReceived : messages.chart.emptyReceivedDay}</EmptyState>
               ) : (
                 <MonthLines rows={received} locale={locale} />
               )}
@@ -335,7 +395,7 @@ export default async function DashboardPage({
             <div>
               <h3 className="mb-2 text-sm font-semibold">{messages.chart.spentList}</h3>
               {spent.length === 0 ? (
-                <EmptyState>{view === "month" ? messages.chart.emptySpentDay : messages.chart.emptySpent}</EmptyState>
+                <EmptyState>{view === "year" ? messages.chart.emptySpent : messages.chart.emptySpentDay}</EmptyState>
               ) : (
                 <MonthLines rows={spent} locale={locale} />
               )}
@@ -346,12 +406,12 @@ export default async function DashboardPage({
 
       {admin ? (
         <Section
-          title={fill(view === "year" ? messages.dash.teamYear : messages.dash.teamMonth, { amount: formatTnd(crewTotals.total) })}
+          title={fill(messages.dash.teamIn, { period: period.label, amount: formatTnd(crewTotals.total) })}
           action={<Link href="/team" className="text-sm text-muted">{messages.dash.openTeam}</Link>}
           className="mb-6"
         >
           {crewRows.length === 0 ? (
-            <EmptyState>{view === "year" ? messages.dash.nobodyAssignedYear : messages.dash.nobodyAssigned}</EmptyState>
+            <EmptyState>{fill(messages.dash.nobodyIn, { period: period.label })}</EmptyState>
           ) : (
             <ul className="-mx-2 grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
               {crewRows.map(({ memberId, person, jobs, pay }) => (

@@ -151,3 +151,120 @@ export function monthRange(year: number, month: number) {
   const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
   return { start, end, days };
 }
+
+export function shiftIsoDate(value: string, days: number): string {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
+
+export type DashboardView = "month" | "year" | "day";
+
+export type DashboardPeriod = {
+  view: DashboardView;
+  key: string;
+  label: string;
+  start: string;
+  end: string;
+  prev: string;
+  next: string;
+  isCurrent: boolean;
+  year: number;
+  month: number;
+  days: number;
+};
+
+const YEAR_MIN = 1970;
+const YEAR_MAX = 2100;
+
+function yearInRange(year: number) {
+  return year >= YEAR_MIN && year <= YEAR_MAX;
+}
+
+export function resolveDashboardPeriod(
+  view: string | undefined,
+  period: string | undefined,
+  today: string,
+  locale: "en" | "fr" = "en",
+): DashboardPeriod {
+  const mode: DashboardView = view === "year" || view === "day" ? view : "month";
+  const currentYear = Number(today.slice(0, 4));
+  const currentMonth = today.slice(0, 7);
+  const dateLocale = locale === "fr" ? "fr-FR" : "en-GB";
+
+  if (mode === "year") {
+    const parsed = period && /^[1-9]\d{3}$/.test(period) ? Number(period) : currentYear;
+    const year = yearInRange(parsed) ? parsed : currentYear;
+    return {
+      view: mode,
+      key: String(year),
+      label: String(year),
+      start: `${year}-01-01`,
+      end: `${year + 1}-01-01`,
+      prev: String(year - 1),
+      next: String(year + 1),
+      isCurrent: year === currentYear,
+      year,
+      month: 1,
+      days: 0,
+    };
+  }
+
+  if (mode === "day") {
+    const key = period && isIsoDate(period) && yearInRange(Number(period.slice(0, 4))) ? period : today;
+    return {
+      view: mode,
+      key,
+      label: formatDate(key, locale),
+      start: key,
+      end: shiftIsoDate(key, 1),
+      prev: shiftIsoDate(key, -1),
+      next: shiftIsoDate(key, 1),
+      isCurrent: key === today,
+      year: Number(key.slice(0, 4)),
+      month: Number(key.slice(5, 7)),
+      days: 1,
+    };
+  }
+
+  const key = period && /^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(period) && yearInRange(Number(period.slice(0, 4))) ? period : currentMonth;
+  const year = Number(key.slice(0, 4));
+  const month = Number(key.slice(5, 7));
+  const range = monthRange(year, month);
+  const prev = month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, "0")}`;
+  const next = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, "0")}`;
+  const label = new Intl.DateTimeFormat(dateLocale, { month: "long", year: "numeric", timeZone: "UTC" }).format(
+    new Date(Date.UTC(year, month - 1, 1)),
+  );
+  return {
+    view: mode,
+    key,
+    label,
+    start: range.start,
+    end: range.end,
+    prev,
+    next,
+    isCurrent: key === currentMonth,
+    year,
+    month,
+    days: range.days,
+  };
+}
+
+export function dashboardPeriodInRange(view: DashboardView, value: string) {
+  const year = Number(value.slice(0, 4));
+  return yearInRange(year);
+}
+
+export type WeddingDateSort = "nearest" | "farthest" | "oldest";
+
+export function sortByWeddingDate<T extends { id: string; wedding_date: string }>(rows: T[], sort: WeddingDateSort, today: string) {
+  return [...rows].sort((a, b) => {
+    if (sort === "oldest") return a.wedding_date.localeCompare(b.wedding_date) || a.id.localeCompare(b.id);
+    if (sort === "farthest") return b.wedding_date.localeCompare(a.wedding_date) || a.id.localeCompare(b.id);
+    const aUpcoming = a.wedding_date >= today;
+    const bUpcoming = b.wedding_date >= today;
+    if (aUpcoming !== bUpcoming) return aUpcoming ? -1 : 1;
+    if (aUpcoming) return a.wedding_date.localeCompare(b.wedding_date) || a.id.localeCompare(b.id);
+    return b.wedding_date.localeCompare(a.wedding_date) || a.id.localeCompare(b.id);
+  });
+}
