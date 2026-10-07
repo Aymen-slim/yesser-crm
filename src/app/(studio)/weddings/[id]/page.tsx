@@ -14,7 +14,7 @@ import {
   WeddingForm,
   WeddingPlaceForm,
 } from "@/components/record-forms";
-import { Badge, Banner, Card, ContactLinks, Disclosure, EmptyState, PageHeader, Section, StatusBadge, coupleName } from "@/components/ui";
+import { Badge, Banner, Card, ContactLinks, Disclosure, EmptyState, Meter, PageHeader, Section, StatusBadge, coupleName } from "@/components/ui";
 import { addWeddingExtra, deletePayment, deleteTask, deleteWedding, deleteWeddingFile, removeWeddingDay, removeWeddingExtra, removeWeddingPlace, resetWeddingFeatures, saveWeddingFeatures, saveWeddingOffer, setCrewPaid, unassignMember, updateAssignment, updateWeddingExtra } from "@/lib/actions";
 import { canManageCrm, requireUser } from "@/lib/auth";
 import { formatDate, one, todayInTunis } from "@/lib/constants";
@@ -122,22 +122,22 @@ export default async function WeddingPage({
         back={{ href: "/weddings", label: messages.nav.weddings }}
         title={client ? coupleName(client.partner_one_name, client.partner_two_name) : messages.common.wedding}
         subtitle={
-          <span className="flex flex-wrap items-center gap-2">
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <StatusBadge status={wedding.status} />
             {pack ? <span>{pack.name}</span> : null}
+            {client ? <ContactLinks phone={client.phone} whatsappPhone={whatsappPhones.get(client.id)} /> : null}
+            {client && manager ? (
+              <Link href={`/clients/${client.id}`} className="text-xs">
+                {messages.couples.details}
+              </Link>
+            ) : null}
           </span>
         }
         action={
           manager ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <Link href={`/weddings/${id}/contract`} className="button no-underline">
-                {messages.contract.open}
-              </Link>
-              <form action={deleteWedding}>
-                <input type="hidden" name="id" value={id} />
-                <ConfirmSubmit message={messages.weddings.deleteConfirm}>{messages.weddings.delete}</ConfirmSubmit>
-              </form>
-            </div>
+            <Link href={`/weddings/${id}/contract`} className="button no-underline">
+              {messages.contract.open}
+            </Link>
           ) : null
         }
       />
@@ -148,25 +148,17 @@ export default async function WeddingPage({
         </p>
       ) : null}
 
-      <Card className="mb-6 grid gap-px overflow-hidden bg-line sm:grid-cols-2 lg:grid-cols-4">
+      <Card className={`mb-6 grid gap-px overflow-hidden bg-line sm:grid-cols-2 ${manager ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
         <Fact label={messages.weddings.date}>
           <span className="block">
             {formatDate(wedding.wedding_date, locale)}
             {wedding.start_time ? <span className="text-muted"> · {wedding.start_time.slice(0, 5)}</span> : null}
           </span>
-          {extraDays.length > 2 ? (
+          {extraDays.length > 0 ? (
             <span className="mt-1 block text-xs font-normal text-muted">
               {fill(messages.weddings.otherDaysCount, { count: extraDays.length })}
             </span>
-          ) : (
-            extraDays.map((day) => (
-              <span key={day.id} className="mt-1 block text-xs font-normal text-muted">
-                {formatDate(day.day_date, locale)}
-                {day.start_time ? ` · ${day.start_time.slice(0, 5)}` : ""}
-                {day.label ? ` · ${day.label}` : ""}
-              </span>
-            ))
-          )}
+          ) : null}
         </Fact>
         <Fact label={messages.weddings.place}>
           <span className="block">{place || messages.common.notSet}</span>
@@ -181,68 +173,294 @@ export default async function WeddingPage({
             </span>
           ) : null}
         </Fact>
-        <Fact label={messages.weddings.couple}>
-          {client ? (
-            <>
-              <ContactLinks phone={client.phone} whatsappPhone={whatsappPhones.get(client.id)} />
-              {manager ? <Link href={`/clients/${client.id}`} className="mt-1 block text-xs">{messages.couples.details}</Link> : null}
-            </>
-          ) : (
-            "—"
-          )}
-        </Fact>
         {manager ? (
           <Fact label={messages.weddings.balance}>
             <span>
               {remaining > 0 ? fill(messages.common.left, { amount: formatTnd(remaining) }) : messages.common.fullyPaid}
             </span>
-            <span className="block text-xs text-muted">
+            <span className="mt-1 block text-xs font-normal text-muted">
               {fill(messages.common.ofTotal, { paid: formatTnd(paidTotal), total: formatTnd(wedding.total_millimes) })}
             </span>
+            <div className="mt-2">
+              <Meter
+                segments={[
+                  { value: Math.max(0, paidTotal), tone: "accent" },
+                  { value: Math.max(0, remaining), tone: "mid" },
+                ]}
+              />
+            </div>
           </Fact>
-        ) : (
-          <Fact label={messages.weddings.openTasks}>{openTasks}</Fact>
-        )}
+        ) : null}
+        <Fact label={messages.weddings.openTasks}>{openTasks}</Fact>
       </Card>
 
-      {manager ? (
-        <Disclosure label={messages.weddings.edit}>
-          <WeddingForm wedding={wedding} clients={clients.data ?? []} packages={packages.data ?? []} lockTotal={offerLocked} />
-        </Disclosure>
-      ) : null}
+      <div className="mb-6 grid gap-6 lg:grid-cols-[1fr_320px]">
+        <div className="flex min-w-0 flex-col gap-6">
+          <Section title={messages.weddings.tasks} action={<span className="text-xs text-muted">{fill(messages.weddings.openCount, { count: openTasks })}</span>}>
+            {(tasks.data ?? []).length === 0 ? (
+              <EmptyState>{messages.weddings.noTasks}</EmptyState>
+            ) : (
+              <ul className="divide-y divide-line">
+                {(tasks.data ?? []).map((task) => {
+                  const late = task.status !== "done" && task.due_date && task.due_date < today;
+                  return (
+                    <li key={task.id} className="flex flex-col items-stretch gap-3 py-3 text-sm md:flex-row md:flex-wrap md:items-center md:justify-between">
+                      <span className="min-w-0">
+                        <span className={`flex items-center gap-2 font-medium ${task.status === "done" ? "text-muted line-through" : ""}`}>
+                          {task.title}
+                          <StatusBadge status={task.status} />
+                        </span>
+                        <span className={`block text-xs ${late ? "text-red-700" : "text-muted"}`}>
+                          {task.due_date
+                            ? `${late ? `${messages.common.late} · ` : ""}${formatDate(task.due_date, locale)}`
+                            : messages.common.noDueDate}
+                          {task.assignee_id ? ` · ${memberNames.get(task.assignee_id) ?? messages.common.formerMember}` : ""}
+                        </span>
+                      </span>
+                      <span className="flex flex-col items-stretch gap-2 md:flex-row md:items-center">
+                        <TaskStatusForm task={task} />
+                        {manager ? (
+                          <form action={deleteTask}>
+                            <input type="hidden" name="id" value={task.id} />
+                            <input type="hidden" name="wedding_id" value={id} />
+                            <ConfirmSubmit message={fill(messages.weddings.deleteTask, { title: task.title })}>{messages.common.delete}</ConfirmSubmit>
+                          </form>
+                        ) : null}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <TaskForm weddingId={id} members={members.data ?? []} lockedAssignee={manager ? undefined : profile.id} />
+          </Section>
 
-      <Section title={messages.weddings.schedule} className="mb-6">
-        <div className="grid gap-8 lg:grid-cols-2">
-          <div>
-            <p className="text-xs font-medium tracking-wide text-muted uppercase">{messages.weddings.date}</p>
-            <ul className="mt-2 divide-y divide-line">
-              <li className="flex items-center justify-between gap-3 py-3 text-sm">
-                <span>
-                  <span className="font-medium">{formatDate(wedding.wedding_date, locale)}</span>
-                  {wedding.start_time ? <span className="text-muted"> · {wedding.start_time.slice(0, 5)}</span> : null}
-                  <span className="mt-0.5 block text-xs text-muted">{messages.weddings.mainDay}</span>
-                </span>
-              </li>
-              {extraDays.map((day) => {
-                const label = day.label || formatDate(day.day_date, locale);
-                return (
-                  <li key={day.id} className="flex items-center justify-between gap-3 py-3 text-sm">
-                    <span>
-                      <span className="font-medium">{formatDate(day.day_date, locale)}</span>
-                      {day.start_time ? <span className="text-muted"> · {day.start_time.slice(0, 5)}</span> : null}
-                      {day.label ? <span className="mt-0.5 block text-xs text-muted">{day.label}</span> : null}
-                    </span>
+          {manager ? (
+            <Section
+              title={messages.weddings.payments}
+              action={
+                <Link href={`/invoices/new?wedding=${id}`} className="text-sm text-muted">
+                  {messages.invoice.make}
+                </Link>
+              }
+            >
+              {(payments.data ?? []).length === 0 ? (
+                <EmptyState>{messages.weddings.noPayments}</EmptyState>
+              ) : (
+                <ul className="divide-y divide-line">
+                  {(payments.data ?? []).map((payment) => {
+                    const overdue = !payment.paid_at && payment.due_date && payment.due_date < today;
+                    return (
+                      <li key={payment.id} className="flex flex-col items-stretch gap-3 py-3 text-sm md:flex-row md:flex-wrap md:items-center md:justify-between">
+                        <span>
+                          <span className="flex items-center gap-2 font-medium">
+                            {payment.label}
+                            <StatusBadge status={payment.paid_at ? "paid" : overdue ? "overdue" : "due"} />
+                          </span>
+                          <span className="block text-xs text-muted">
+                            {formatTnd(payment.amount_millimes)} ·{" "}
+                            {payment.paid_at
+                              ? fill(messages.common.paidOn, { date: formatDate(payment.paid_at, locale) })
+                              : fill(messages.common.dueOn, { date: formatDate(payment.due_date, locale) })}
+                          </span>
+                        </span>
+                        <span className="flex flex-col items-stretch gap-2 md:flex-row md:flex-wrap md:items-center md:justify-end">
+                          {payment.paid_at ? (
+                            <MarkUnpaidForm paymentId={payment.id} returnTo={backPath} />
+                          ) : (
+                            <MarkPaidForm paymentId={payment.id} returnTo={backPath} />
+                          )}
+                          <Link href={`${backPath}?edit=${payment.id}#payment-editor`} className="text-sm">
+                            {messages.common.edit}
+                          </Link>
+                          <form action={deletePayment}>
+                            <input type="hidden" name="id" value={payment.id} />
+                            <input type="hidden" name="return_to" value={backPath} />
+                            <ConfirmSubmit message={fill(messages.payments.deleteConfirm, { name: payment.label })}>
+                              {messages.common.delete}
+                            </ConfirmSubmit>
+                          </form>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              <div id="payment-editor" className="mt-4 border-t border-line pt-4">
+                <Disclosure label={editingPayment ? messages.payments.edit : messages.weddings.recordPayment} open={Boolean(editingPayment)}>
+                  <PaymentForm
+                    key={editingPayment?.id ?? "new"}
+                    weddingId={id}
+                    returnTo={backPath}
+                    cancelHref={editingPayment ? backPath : undefined}
+                    payment={
+                      editingPayment
+                        ? {
+                            id: editingPayment.id,
+                            wedding_id: id,
+                            label: editingPayment.label,
+                            amount_millimes: editingPayment.amount_millimes,
+                            due_date: editingPayment.due_date,
+                            paid_at: editingPayment.paid_at,
+                            method: editingPayment.method,
+                            note: editingPayment.note ?? "",
+                          }
+                        : undefined
+                    }
+                  />
+                </Disclosure>
+              </div>
+            </Section>
+          ) : null}
+
+        </div>
+
+        <div className="flex flex-col gap-6">
+          <Section title={messages.weddings.team}>
+            {(assignments.data ?? []).length === 0 ? (
+              <EmptyState>{messages.weddings.nobody}</EmptyState>
+            ) : (
+              <ul className="divide-y divide-line text-sm">
+                {(assignments.data ?? []).map((row) => {
+                  const pay = one(row.assignment_pay as { amount_millimes: number; paid_at: string | null } | { amount_millimes: number; paid_at: string | null }[] | null);
+                  const name = one(row.profiles)?.full_name ?? messages.common.teamMember;
+                  const people = members.data ?? [];
+                  const choices = people.some((person) => person.id === row.member_id) ? people : [{ id: row.member_id, full_name: name }, ...people];
+                  const formId = `crew-${row.member_id}`;
+                  return (
+                    <li key={row.member_id} className="py-3 first:pt-0">
+                      {manager ? (
+                        <>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <Link href={`/team/${row.member_id}`} className="font-medium">
+                                {name}
+                              </Link>
+                              <p className="mt-0.5 text-xs text-muted">
+                                {row.role_on_day || messages.common.notSet}
+                                {" · "}
+                                {pay ? formatTnd(pay.amount_millimes) : messages.common.notSet}
+                              </p>
+                              <p className={`mt-0.5 text-xs ${pay?.paid_at ? "text-ink" : "text-muted"}`}>
+                                {pay?.paid_at ? fill(messages.common.paidOn, { date: formatDate(pay.paid_at, locale) }) : messages.common.notPaid}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                              <SubmitButton form={formId} className="ghost !px-2 !py-1 !text-xs" pendingLabel={messages.common.saving}>
+                                {messages.common.save}
+                              </SubmitButton>
+                              <form action={setCrewPaid}>
+                                <input type="hidden" name="wedding_id" value={id} />
+                                <input type="hidden" name="member_id" value={row.member_id} />
+                                <input type="hidden" name="paid" value={pay?.paid_at ? "false" : "true"} />
+                                <SubmitButton className="ghost !px-2 !py-1 !text-xs" pendingLabel="…">
+                                  {pay?.paid_at ? messages.common.undo : messages.weddings.markPaid}
+                                </SubmitButton>
+                              </form>
+                              <form action={unassignMember}>
+                                <input type="hidden" name="wedding_id" value={id} />
+                                <input type="hidden" name="member_id" value={row.member_id} />
+                                <ConfirmSubmit message={fill(messages.weddings.removePerson, { name })}>
+                                  {messages.common.remove}
+                                </ConfirmSubmit>
+                              </form>
+                            </div>
+                          </div>
+                          <Fold label={messages.weddings.editCrew}>
+                            <form id={formId} action={updateAssignment} className="grid gap-2">
+                              <input type="hidden" name="wedding_id" value={id} />
+                              <input type="hidden" name="previous_member_id" value={row.member_id} />
+                              <select name="member_id" defaultValue={row.member_id} aria-label={messages.common.teamMember}>
+                                {choices.map((person) => (
+                                  <option key={person.id} value={person.id}>
+                                    {person.full_name}
+                                  </option>
+                                ))}
+                              </select>
+                              <input name="role_on_day" defaultValue={row.role_on_day} placeholder={messages.forms.roleHint} aria-label={messages.forms.roleAria} />
+                              <input
+                                name="pay"
+                                inputMode="decimal"
+                                defaultValue={pay ? (pay.amount_millimes / 1000).toFixed(3) : ""}
+                                placeholder={messages.forms.payHint}
+                                aria-label={messages.forms.payAria}
+                              />
+                            </form>
+                          </Fold>
+                        </>
+                      ) : (
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium">{name}</span>
+                          <Badge>{row.role_on_day}</Badge>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {manager ? <AssignForm weddingId={id} members={members.data ?? []} /> : null}
+          </Section>
+
+          <Section title={messages.weddings.files}>
+            {signed.length === 0 ? (
+              <EmptyState>{messages.weddings.noFiles}</EmptyState>
+            ) : (
+              <ul className="flex flex-col gap-1 text-sm">
+                {signed.map((file) => (
+                  <li key={file.id} className="flex items-center justify-between gap-2">
+                    {file.url ? (
+                      <a href={file.url} target="_blank" rel="noreferrer" className="min-w-0 truncate">
+                        {file.file_name}
+                      </a>
+                    ) : (
+                      <span className="min-w-0 truncate">{file.file_name}</span>
+                    )}
                     {manager ? (
-                      <form action={removeWeddingDay}>
-                        <input type="hidden" name="id" value={day.id} />
+                      <form action={deleteWeddingFile}>
+                        <input type="hidden" name="id" value={file.id} />
                         <input type="hidden" name="wedding_id" value={id} />
-                        <ConfirmSubmit message={fill(messages.weddings.removeDay, { label })}>{messages.common.remove}</ConfirmSubmit>
+                        <ConfirmSubmit message={fill(messages.weddings.deleteFile, { name: file.file_name })}>{messages.common.delete}</ConfirmSubmit>
                       </form>
                     ) : null}
                   </li>
-                );
-              })}
-            </ul>
+                ))}
+              </ul>
+            )}
+            <FileForm weddingId={id} />
+          </Section>
+        </div>
+      </div>
+      <Section title={messages.weddings.schedule} className="mb-6">
+        <div className="grid gap-8 lg:grid-cols-2">
+          <div>
+            <p className="text-xs font-medium tracking-wide text-muted uppercase">{messages.weddings.moreDays}</p>
+            {manager ? <p className="mt-1 text-xs text-muted">{messages.weddings.moreDaysHint}</p> : null}
+            {extraDays.length === 0 ? (
+              <p className="mt-3 text-sm text-muted">{messages.weddings.noMoreDays}</p>
+            ) : (
+              <ul className="mt-2 divide-y divide-line">
+                {extraDays.map((day) => {
+                  const label = day.label || formatDate(day.day_date, locale);
+                  return (
+                    <li key={day.id} className="flex items-center justify-between gap-3 py-3 text-sm">
+                      <span>
+                        <span className="font-medium">{formatDate(day.day_date, locale)}</span>
+                        {day.start_time ? <span className="text-muted"> · {day.start_time.slice(0, 5)}</span> : null}
+                        {day.label ? <span className="mt-0.5 block text-xs text-muted">{day.label}</span> : null}
+                      </span>
+                      {manager ? (
+                        <form action={removeWeddingDay}>
+                          <input type="hidden" name="id" value={day.id} />
+                          <input type="hidden" name="wedding_id" value={id} />
+                          <ConfirmSubmit message={fill(messages.weddings.removeDay, { label })}>{messages.common.remove}</ConfirmSubmit>
+                        </form>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
             {manager ? (
               <Fold label={messages.weddings.addDay} open={error === "add_day_failed" || error === "day_is_main" || error === "day_exists"}>
                 <WeddingDayForm weddingId={id} />
@@ -250,42 +468,38 @@ export default async function WeddingPage({
             ) : null}
           </div>
           <div>
-            <p className="text-xs font-medium tracking-wide text-muted uppercase">{messages.weddings.place}</p>
-            <ul className="mt-2 divide-y divide-line">
-              <li className="py-3 text-sm">
-                <span className="font-medium">{place || messages.common.notSet}</span>
-                <span className="mt-0.5 block text-xs text-muted">{messages.weddings.mainPlace}</span>
-                {wedding.location_url ? (
-                  <a href={wedding.location_url} target="_blank" rel="noopener noreferrer" className="text-xs">
-                    {messages.weddings.openMap}
-                  </a>
-                ) : null}
-              </li>
-              {extraPlaces.map((spot) => {
-                const where = [spot.venue_name, spot.city].filter(Boolean).join(", ");
-                const label = spot.label || where || messages.weddings.place;
-                return (
-                  <li key={spot.id} className="flex items-center justify-between gap-3 py-3 text-sm">
-                    <span className="min-w-0">
-                      <span className="block font-medium">{label}</span>
-                      {spot.label && where ? <span className="block text-xs text-muted">{where}</span> : null}
-                      {spot.location_url ? (
-                        <a href={spot.location_url} target="_blank" rel="noopener noreferrer" className="text-xs">
-                          {messages.weddings.openMap}
-                        </a>
+            <p className="text-xs font-medium tracking-wide text-muted uppercase">{messages.weddings.morePlaces}</p>
+            {manager ? <p className="mt-1 text-xs text-muted">{messages.weddings.morePlacesHint}</p> : null}
+            {extraPlaces.length === 0 ? (
+              <p className="mt-3 text-sm text-muted">{messages.weddings.noMorePlaces}</p>
+            ) : (
+              <ul className="mt-2 divide-y divide-line">
+                {extraPlaces.map((spot) => {
+                  const where = [spot.venue_name, spot.city].filter(Boolean).join(", ");
+                  const label = spot.label || where || messages.weddings.place;
+                  return (
+                    <li key={spot.id} className="flex items-center justify-between gap-3 py-3 text-sm">
+                      <span className="min-w-0">
+                        <span className="block font-medium">{label}</span>
+                        {spot.label && where ? <span className="block text-xs text-muted">{where}</span> : null}
+                        {spot.location_url ? (
+                          <a href={spot.location_url} target="_blank" rel="noopener noreferrer" className="text-xs">
+                            {messages.weddings.openMap}
+                          </a>
+                        ) : null}
+                      </span>
+                      {manager ? (
+                        <form action={removeWeddingPlace}>
+                          <input type="hidden" name="id" value={spot.id} />
+                          <input type="hidden" name="wedding_id" value={id} />
+                          <ConfirmSubmit message={fill(messages.weddings.removePlace, { label })}>{messages.common.remove}</ConfirmSubmit>
+                        </form>
                       ) : null}
-                    </span>
-                    {manager ? (
-                      <form action={removeWeddingPlace}>
-                        <input type="hidden" name="id" value={spot.id} />
-                        <input type="hidden" name="wedding_id" value={id} />
-                        <ConfirmSubmit message={fill(messages.weddings.removePlace, { label })}>{messages.common.remove}</ConfirmSubmit>
-                      </form>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
             {manager ? (
               <Fold label={messages.weddings.addPlace} open={error === "add_place_failed" || error === "err_place"}>
                 <WeddingPlaceForm weddingId={id} />
@@ -419,250 +633,32 @@ export default async function WeddingPage({
         </Section>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-        <div className="flex min-w-0 flex-col gap-6">
-          <Section title={messages.weddings.tasks} action={<span className="text-xs text-muted">{fill(messages.weddings.openCount, { count: openTasks })}</span>}>
-            {(tasks.data ?? []).length === 0 ? (
-              <EmptyState>{messages.weddings.noTasks}</EmptyState>
-            ) : (
-              <ul className="divide-y divide-line">
-                {(tasks.data ?? []).map((task) => {
-                  const late = task.status !== "done" && task.due_date && task.due_date < today;
-                  return (
-                    <li key={task.id} className="flex flex-col items-stretch gap-3 py-3 text-sm md:flex-row md:flex-wrap md:items-center md:justify-between">
-                      <span className="min-w-0">
-                        <span className={`flex items-center gap-2 font-medium ${task.status === "done" ? "text-muted line-through" : ""}`}>
-                          {task.title}
-                          <StatusBadge status={task.status} />
-                        </span>
-                        <span className={`block text-xs ${late ? "text-red-700" : "text-muted"}`}>
-                          {task.due_date
-                            ? `${late ? `${messages.common.late} · ` : ""}${formatDate(task.due_date, locale)}`
-                            : messages.common.noDueDate}
-                          {task.assignee_id ? ` · ${memberNames.get(task.assignee_id) ?? messages.common.formerMember}` : ""}
-                        </span>
-                      </span>
-                      <span className="flex flex-col items-stretch gap-2 md:flex-row md:items-center">
-                        <TaskStatusForm task={task} />
-                        {manager ? (
-                          <form action={deleteTask}>
-                            <input type="hidden" name="id" value={task.id} />
-                            <input type="hidden" name="wedding_id" value={id} />
-                            <ConfirmSubmit message={fill(messages.weddings.deleteTask, { title: task.title })}>{messages.common.delete}</ConfirmSubmit>
-                          </form>
-                        ) : null}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            <TaskForm weddingId={id} members={members.data ?? []} lockedAssignee={manager ? undefined : profile.id} />
-          </Section>
-
-          {manager ? (
-            <Section
-              title={messages.weddings.payments}
-              action={
-                <Link href={`/invoices/new?wedding=${id}`} className="text-sm text-muted">
-                  {messages.invoice.make}
-                </Link>
-              }
-            >
-              {(payments.data ?? []).length === 0 ? (
-                <EmptyState>{messages.weddings.noPayments}</EmptyState>
-              ) : (
-                <ul className="divide-y divide-line">
-                  {(payments.data ?? []).map((payment) => {
-                    const overdue = !payment.paid_at && payment.due_date && payment.due_date < today;
-                    return (
-                      <li key={payment.id} className="flex flex-col items-stretch gap-3 py-3 text-sm md:flex-row md:flex-wrap md:items-center md:justify-between">
-                        <span>
-                          <span className="flex items-center gap-2 font-medium">
-                            {payment.label}
-                            <StatusBadge status={payment.paid_at ? "paid" : overdue ? "overdue" : "due"} />
-                          </span>
-                          <span className="block text-xs text-muted">
-                            {formatTnd(payment.amount_millimes)} ·{" "}
-                            {payment.paid_at
-                              ? fill(messages.common.paidOn, { date: formatDate(payment.paid_at, locale) })
-                              : fill(messages.common.dueOn, { date: formatDate(payment.due_date, locale) })}
-                          </span>
-                        </span>
-                        <span className="flex flex-col items-stretch gap-2 md:flex-row md:flex-wrap md:items-center md:justify-end">
-                          {payment.paid_at ? (
-                            <MarkUnpaidForm paymentId={payment.id} returnTo={backPath} />
-                          ) : (
-                            <MarkPaidForm paymentId={payment.id} returnTo={backPath} />
-                          )}
-                          <Link href={`${backPath}?edit=${payment.id}#payment-editor`} className="text-sm">
-                            {messages.common.edit}
-                          </Link>
-                          <form action={deletePayment}>
-                            <input type="hidden" name="id" value={payment.id} />
-                            <input type="hidden" name="return_to" value={backPath} />
-                            <ConfirmSubmit message={fill(messages.payments.deleteConfirm, { name: payment.label })}>
-                              {messages.common.delete}
-                            </ConfirmSubmit>
-                          </form>
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-              <div id="payment-editor" className="mt-4 border-t border-line pt-4">
-                <Disclosure label={editingPayment ? messages.payments.edit : messages.weddings.recordPayment} open={Boolean(editingPayment)}>
-                  <PaymentForm
-                    key={editingPayment?.id ?? "new"}
-                    weddingId={id}
-                    returnTo={backPath}
-                    cancelHref={editingPayment ? backPath : undefined}
-                    payment={
-                      editingPayment
-                        ? {
-                            id: editingPayment.id,
-                            wedding_id: id,
-                            label: editingPayment.label,
-                            amount_millimes: editingPayment.amount_millimes,
-                            due_date: editingPayment.due_date,
-                            paid_at: editingPayment.paid_at,
-                            method: editingPayment.method,
-                            note: editingPayment.note ?? "",
-                          }
-                        : undefined
-                    }
-                  />
-                </Disclosure>
-              </div>
-            </Section>
-          ) : null}
-
-          <Section title={messages.weddings.notes}>
-            {(notes.data ?? []).length === 0 ? (
-              <EmptyState>{messages.weddings.noNotes}</EmptyState>
-            ) : (
-              <ul className="flex flex-col gap-3">
-                {(notes.data ?? []).map((note) => (
-                  <li key={note.id} className="rounded-lg bg-canvas px-3 py-2.5 text-sm">
-                    <p className="whitespace-pre-wrap">{note.body}</p>
-                    <span className="mt-1 block text-xs text-muted">
-                      {one(note.profiles)?.full_name ?? messages.common.someone} · {formatDate(note.created_at.slice(0, 10), locale)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <NoteForm weddingId={id} />
-          </Section>
-        </div>
-
-        <div className="flex flex-col gap-6">
-          <Section title={messages.weddings.team}>
-            {(assignments.data ?? []).length === 0 ? (
-              <EmptyState>{messages.weddings.nobody}</EmptyState>
-            ) : (
-              <ul className="divide-y divide-line text-sm">
-                {(assignments.data ?? []).map((row) => {
-                  const pay = one(row.assignment_pay as { amount_millimes: number; paid_at: string | null } | { amount_millimes: number; paid_at: string | null }[] | null);
-                  const name = one(row.profiles)?.full_name ?? messages.common.teamMember;
-                  const people = members.data ?? [];
-                  const choices = people.some((person) => person.id === row.member_id) ? people : [{ id: row.member_id, full_name: name }, ...people];
-                  return (
-                    <li key={row.member_id} className="py-3 first:pt-0">
-                      {manager ? (
-                        <form action={updateAssignment} className="grid gap-2">
-                          <Link href={`/team/${row.member_id}`} className="text-xs font-medium">
-                            {name}
-                          </Link>
-                          <input type="hidden" name="wedding_id" value={id} />
-                          <input type="hidden" name="previous_member_id" value={row.member_id} />
-                          <select name="member_id" defaultValue={row.member_id} aria-label={messages.common.teamMember}>
-                            {choices.map((person) => (
-                              <option key={person.id} value={person.id}>
-                                {person.full_name}
-                              </option>
-                            ))}
-                          </select>
-                          <input name="role_on_day" defaultValue={row.role_on_day} placeholder={messages.forms.roleHint} aria-label={messages.forms.roleAria} />
-                          <input
-                            name="pay"
-                            inputMode="decimal"
-                            defaultValue={pay ? (pay.amount_millimes / 1000).toFixed(3) : ""}
-                            placeholder={messages.forms.payHint}
-                            aria-label={messages.forms.payAria}
-                          />
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className={`text-xs ${pay?.paid_at ? "text-ink" : "text-muted"}`}>
-                              {pay?.paid_at ? fill(messages.common.paidOn, { date: formatDate(pay.paid_at, locale) }) : messages.common.notPaid}
-                            </span>
-                            <SubmitButton className="ghost !px-2 !py-1 !text-xs" pendingLabel={messages.common.saving}>
-                              {messages.common.save}
-                            </SubmitButton>
-                          </div>
-                        </form>
-                      ) : (
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium">{name}</span>
-                          <Badge>{row.role_on_day}</Badge>
-                        </div>
-                      )}
-                      {manager ? (
-                        <div className="mt-1 flex items-center justify-end">
-                          <form action={setCrewPaid}>
-                            <input type="hidden" name="wedding_id" value={id} />
-                            <input type="hidden" name="member_id" value={row.member_id} />
-                            <input type="hidden" name="paid" value={pay?.paid_at ? "false" : "true"} />
-                            <SubmitButton className="ghost !px-2 !py-1 !text-xs" pendingLabel="…">
-                              {pay?.paid_at ? messages.common.undo : messages.weddings.markPaid}
-                            </SubmitButton>
-                          </form>
-                          <form action={unassignMember}>
-                            <input type="hidden" name="wedding_id" value={id} />
-                            <input type="hidden" name="member_id" value={row.member_id} />
-                            <ConfirmSubmit message={fill(messages.weddings.removePerson, { name })}>
-                              {messages.common.remove}
-                            </ConfirmSubmit>
-                          </form>
-                        </div>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            {manager ? <AssignForm weddingId={id} members={members.data ?? []} /> : null}
-          </Section>
-
-          <Section title={messages.weddings.files}>
-            {signed.length === 0 ? (
-              <EmptyState>{messages.weddings.noFiles}</EmptyState>
-            ) : (
-              <ul className="flex flex-col gap-1 text-sm">
-                {signed.map((file) => (
-                  <li key={file.id} className="flex items-center justify-between gap-2">
-                    {file.url ? (
-                      <a href={file.url} target="_blank" rel="noreferrer" className="min-w-0 truncate">
-                        {file.file_name}
-                      </a>
-                    ) : (
-                      <span className="min-w-0 truncate">{file.file_name}</span>
-                    )}
-                    {manager ? (
-                      <form action={deleteWeddingFile}>
-                        <input type="hidden" name="id" value={file.id} />
-                        <input type="hidden" name="wedding_id" value={id} />
-                        <ConfirmSubmit message={fill(messages.weddings.deleteFile, { name: file.file_name })}>{messages.common.delete}</ConfirmSubmit>
-                      </form>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-            <FileForm weddingId={id} />
-          </Section>
-        </div>
-      </div>
+      <Section title={messages.weddings.notes} className="mb-6">
+        {(notes.data ?? []).length === 0 ? (
+          <EmptyState>{messages.weddings.noNotes}</EmptyState>
+        ) : (
+          <ul className="flex flex-col gap-3">
+            {(notes.data ?? []).map((note) => (
+              <li key={note.id} className="rounded-lg bg-canvas px-3 py-2.5 text-sm">
+                <p className="whitespace-pre-wrap">{note.body}</p>
+                <span className="mt-1 block text-xs text-muted">
+                  {one(note.profiles)?.full_name ?? messages.common.someone} · {formatDate(note.created_at.slice(0, 10), locale)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <NoteForm weddingId={id} />
+      </Section>
+      {manager ? (
+        <Disclosure label={messages.weddings.edit}>
+          <WeddingForm wedding={wedding} clients={clients.data ?? []} packages={packages.data ?? []} lockTotal={offerLocked} />
+          <form action={deleteWedding} className="mt-4 mb-5 border-t border-line pt-4">
+            <input type="hidden" name="id" value={id} />
+            <ConfirmSubmit message={messages.weddings.deleteConfirm}>{messages.weddings.delete}</ConfirmSubmit>
+          </form>
+        </Disclosure>
+      ) : null}
     </div>
   );
 }

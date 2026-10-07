@@ -140,15 +140,23 @@ export default async function WeddingsPage({
           ...WEDDING_STATUSES.map((value) => ({ value, label: term(messages, value), href: listHref({ status: value }) })),
         ]}
       />
-      <p className="-mt-2 mb-2 text-xs font-medium text-muted">{messages.weddings.orderByDate}</p>
-      <FilterTabs
-        active={sort}
-        items={(["nearest", "farthest", "oldest"] as const).map((value) => ({
-          value,
-          label: value === "nearest" ? messages.weddings.sortNearest : value === "farthest" ? messages.weddings.sortFarthest : messages.weddings.sortOldest,
-          href: listHref({ sort: value }),
-        }))}
-      />
+      <div className="mb-5 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+        <span className="text-xs font-medium tracking-wide text-muted uppercase">{messages.weddings.orderByDate}</span>
+        <span className="flex flex-wrap gap-1">
+          {(["nearest", "farthest", "oldest"] as const).map((value) => (
+            <Link
+              key={value}
+              href={listHref({ sort: value })}
+              aria-current={value === sort ? "true" : undefined}
+              className={`inline-flex min-h-9 items-center rounded-full px-3 no-underline ${
+                value === sort ? "bg-surface font-medium text-ink shadow-[inset_0_0_0_1px_var(--color-line)]" : "text-muted hover:text-ink"
+              }`}
+            >
+              {value === "nearest" ? messages.weddings.sortNearest : value === "farthest" ? messages.weddings.sortFarthest : messages.weddings.sortOldest}
+            </Link>
+          ))}
+        </span>
+      </div>
       <PhoneList>
         {weddings.length === 0 ? (
           <EmptyState>{status ? fill(messages.weddings.noneStatus, { status: term(messages, status) }) : messages.weddings.none}</EmptyState>
@@ -160,28 +168,30 @@ export default async function WeddingsPage({
             return (
               <PhoneCard key={wedding.id} href={`/weddings/${wedding.id}`}>
                 <span className="flex items-start justify-between gap-3">
-                  <span className="font-medium">
-                    {client ? coupleName(client.partner_one_name, client.partner_two_name) : messages.common.wedding}
+                  <span className="min-w-0">
+                    <span className="block font-medium">
+                      {client ? coupleName(client.partner_one_name, client.partner_two_name) : messages.common.wedding}
+                    </span>
+                    <span className="mt-1 block text-sm">
+                      {formatDate(wedding.wedding_date, locale)}
+                      {wedding.start_time ? ` · ${wedding.start_time.slice(0, 5)}` : ""}
+                    </span>
+                    {(daysByWedding.get(wedding.id) ?? []).map((day) => (
+                      <span key={day.day_date} className="block text-xs text-muted">
+                        {formatDate(day.day_date, locale)}
+                        {day.label ? ` · ${day.label}` : ""}
+                      </span>
+                    ))}
+                    <span className="mt-1 block text-sm text-muted">{place || "—"}</span>
+                    {(placesByWedding.get(wedding.id) ?? []).map((spot, index) => (
+                      <span key={`${spot.label}-${index}`} className="block text-xs text-muted">
+                        {[spot.label, spot.venue_name, spot.city].filter(Boolean).join(", ")}
+                      </span>
+                    ))}
+                    <span className="mt-0.5 block text-sm text-muted">{pack?.name ?? "—"}</span>
                   </span>
                   <StatusBadge status={wedding.status} />
                 </span>
-                <span className="mt-1 block text-sm text-muted">
-                  {formatDate(wedding.wedding_date, locale)}
-                  {wedding.start_time ? ` · ${wedding.start_time.slice(0, 5)}` : ""}
-                </span>
-                {(daysByWedding.get(wedding.id) ?? []).map((day) => (
-                  <span key={day.day_date} className="block text-xs text-muted">
-                    {formatDate(day.day_date, locale)}
-                    {day.label ? ` · ${day.label}` : ""}
-                  </span>
-                ))}
-                <span className="mt-1 block text-sm">{place || "—"}</span>
-                {(placesByWedding.get(wedding.id) ?? []).map((spot, index) => (
-                  <span key={`${spot.label}-${index}`} className="block text-xs text-muted">
-                    {[spot.label, spot.venue_name, spot.city].filter(Boolean).join(", ")}
-                  </span>
-                ))}
-                <span className="mt-1 block text-sm text-muted">{pack?.name ?? "—"}</span>
               </PhoneCard>
             );
           })
@@ -195,7 +205,7 @@ export default async function WeddingsPage({
               <th>{messages.weddings.date}</th>
               <th>{messages.weddings.place}</th>
               <th>{messages.weddings.package}</th>
-              <th>{messages.weddings.status}</th>
+              <th className="text-right">{messages.weddings.status}</th>
             </tr>
           </thead>
           <tbody>
@@ -210,7 +220,7 @@ export default async function WeddingsPage({
                     </Link>
                   </td>
                   <td className="whitespace-nowrap">
-                    {formatDate(wedding.wedding_date, locale)}
+                    <span className="font-medium">{formatDate(wedding.wedding_date, locale)}</span>
                     {wedding.start_time ? <span className="block text-xs text-muted">{wedding.start_time.slice(0, 5)}</span> : null}
                     {(daysByWedding.get(wedding.id) ?? []).map((day) => (
                       <span key={day.day_date} className="block text-xs text-muted">
@@ -228,7 +238,7 @@ export default async function WeddingsPage({
                     ))}
                   </td>
                   <td className="text-muted">{pack?.name ?? "—"}</td>
-                  <td>
+                  <td className="text-right">
                     <StatusBadge status={wedding.status} />
                   </td>
                 </tr>

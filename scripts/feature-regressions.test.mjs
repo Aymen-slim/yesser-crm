@@ -235,11 +235,17 @@ function weddingPageFixture({ whatsappEnabled = false, weddingError = null, miss
   };
 }
 
-function findElement(node, predicate) {
-  if (Array.isArray(node)) return node.map((item) => findElement(item, predicate)).find(Boolean);
-  if (!node || typeof node !== "object") return null;
+function findElement(node, predicate, seen = new Set()) {
+  if (Array.isArray(node)) return node.map((item) => findElement(item, predicate, seen)).find(Boolean);
+  if (!node || typeof node !== "object" || seen.has(node)) return null;
+  seen.add(node);
   if (predicate(node)) return node;
-  return findElement(node.props?.children, predicate);
+  if (!node.props || typeof node.props !== "object") return null;
+  for (const value of Object.values(node.props)) {
+    const found = findElement(value, predicate, seen);
+    if (found) return found;
+  }
+  return null;
 }
 
 test("existing wedding opens when optional WhatsApp column has not been migrated", async () => {
