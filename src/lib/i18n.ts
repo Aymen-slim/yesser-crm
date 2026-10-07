@@ -26,6 +26,7 @@ const en = {
   },
   ui: {
     menu: "Menu",
+    more: "More",
     close: "Close",
     language: "Language",
   },
@@ -728,6 +729,7 @@ const fr: Widen<typeof en> = {
   },
   ui: {
     menu: "Menu",
+    more: "Plus",
     close: "Fermer",
     language: "Langue",
   },

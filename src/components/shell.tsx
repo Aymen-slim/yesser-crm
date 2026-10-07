@@ -1,4 +1,4 @@
-import { NavLinks, LanguageSwitcher } from "@/components/client";
+import { BottomNav, NavLinks, LanguageSwitcher } from "@/components/client";
 import { LogoMark } from "@/components/ui";
 import { signOut } from "@/lib/actions";
 import { canManageCrm, type Profile } from "@/lib/auth";
@@ -52,7 +52,7 @@ export function Shell({
           <LogoMark />
           <span className="text-[15px] font-semibold tracking-tight">Yesser</span>
         </Link>
-        <NavLinks items={items} layout="sidebar" />
+        <NavLinks items={items} />
         <div className="mt-auto border-t border-line p-4">
           <div className="mb-4">{languageSwitcher()}</div>
           <div className="mb-3 flex items-center gap-3">
@@ -68,30 +68,29 @@ export function Shell({
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 print:hidden md:hidden">
-          <div className="relative border-b border-line bg-surface">
-            <div className="flex items-center gap-3 px-5 py-3">
-              <Link href={profile.role === "assistant" ? "/weddings" : "/"} className="flex shrink-0 items-center gap-2.5 no-underline">
-                <LogoMark />
-                <span className="text-[15px] font-semibold tracking-tight">Yesser</span>
-              </Link>
-              <NavLinks
-                items={items}
-                menuLabel={messages.ui.menu}
-                closeLabel={messages.ui.close}
-                languageSwitcher={languageSwitcher()}
-                mobileFooter={
-                  <div className="mt-3 border-t border-line pt-3">
-                    <p className="truncate text-sm font-semibold">{profile.full_name}</p>
-                    <p className="mb-3 text-xs text-muted">{messages.terms[profile.role]}</p>
-                    {signOutButton("ghost w-full", true)}
-                  </div>
-                }
-              />
-            </div>
+        <header className="sticky top-0 z-30 border-b border-line bg-surface print:hidden md:hidden">
+          <div className="flex items-center px-5 py-3">
+            <Link href={profile.role === "assistant" ? "/weddings" : "/"} className="flex shrink-0 items-center gap-2.5 no-underline">
+              <LogoMark />
+              <span className="text-[15px] font-semibold tracking-tight">Yesser</span>
+            </Link>
           </div>
         </header>
-        <main className="mx-auto w-full max-w-7xl flex-1 px-5 py-8 md:px-8 md:py-10 print:max-w-none print:px-0 print:py-0">{children}</main>
+        <main className="mx-auto w-full max-w-7xl flex-1 px-5 pt-8 pb-[calc(6.5rem+env(safe-area-inset-bottom))] md:px-8 md:pt-10 md:pb-10 print:max-w-none print:px-0 print:py-0 print:pb-0">{children}</main>
+        <BottomNav
+          items={items}
+          role={profile.role}
+          moreLabel={messages.ui.more}
+          closeLabel={messages.ui.close}
+          languageSwitcher={languageSwitcher()}
+          footer={
+            <div className="mt-3 border-t border-line pt-3">
+              <p className="truncate text-sm font-semibold">{profile.full_name}</p>
+              <p className="mb-3 text-xs text-muted">{messages.terms[profile.role]}</p>
+              {signOutButton("ghost w-full", true)}
+            </div>
+          }
+        />
       </div>
     </div>
   );

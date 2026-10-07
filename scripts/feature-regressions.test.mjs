@@ -414,7 +414,7 @@ test("assistant dashboard requests redirect before any data is loaded", async ()
 
 test("assistant navigation includes CRM pages but excludes the dashboard", () => {
   const { Shell } = load("src/components/shell.tsx", {
-    "@/components/client": { NavLinks: () => null, LanguageSwitcher: () => null },
+    "@/components/client": { NavLinks: () => null, LanguageSwitcher: () => null, BottomNav: () => null },
     "@/components/ui": { LogoMark: () => null },
     "@/lib/actions": { signOut: () => {} },
     "@/lib/auth": { canManageCrm: (profile) => ["admin", "assistant"].includes(profile.role) },

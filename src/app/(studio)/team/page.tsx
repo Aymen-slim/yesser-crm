@@ -5,11 +5,14 @@ import {
   Banner,
   Disclosure,
   EmptyRow,
+  EmptyState,
   Field,
   FilterTabs,
   InstagramLink,
   MonthNav,
   PageHeader,
+  PhoneCard,
+  PhoneList,
   StatCard,
   TableCard,
 } from "@/components/ui";
@@ -129,7 +132,56 @@ export default async function TeamPage({
         </form>
       </Disclosure> : null}
 
-      <TableCard>
+      <PhoneList>
+        {(data ?? []).length === 0 ? (
+          <EmptyState>{messages.team.empty}</EmptyState>
+        ) : (
+          (data ?? []).map((member) => {
+            const memberJobs = jobs.get(member.id) ?? [];
+            const pay = payTotals(memberJobs);
+            const rate = one(member.member_rates as { rate_millimes: number } | { rate_millimes: number }[] | null)?.rate_millimes ?? 0;
+            return (
+              <PhoneCard key={member.id}>
+                <span className={member.active ? "block" : "block opacity-60"}>
+                  <Link href={`/team/${member.id}${monthQuery}`} className="font-medium">
+                    {member.full_name}
+                  </Link>
+                  <span className="mt-1 flex flex-wrap gap-1">
+                    {member.role === "admin" ? <Badge tone="violet">{messages.terms.admin}</Badge> : member.role === "assistant" ? <Badge tone="blue">{messages.terms.assistant}</Badge> : null}
+                    {member.has_login ? null : <Badge>{messages.team.noLogin}</Badge>}
+                    {member.active ? null : <Badge>{messages.team.inactive}</Badge>}
+                  </span>
+                  <span className="mt-2 block text-sm">{member.job || <span className="text-muted">—</span>}</span>
+                  <span className="mt-1 block text-sm">
+                    <InstagramLink handle={member.instagram} />
+                  </span>
+                  <span className="mt-2 block text-sm">
+                    <span className="text-muted">{messages.team.rate}</span>{" "}
+                    {rate ? formatTnd(rate) : <span className="text-muted">—</span>}
+                  </span>
+                  <span className="mt-1 block text-sm">
+                    <span className="text-muted">{messages.team.weddings}</span> {memberJobs.length || 0}
+                  </span>
+                  <span className="mt-2 block text-sm">
+                    <span className="text-muted">{monthly ? messages.team.payThisMonth : messages.team.payAll}</span>{" "}
+                    {pay.total ? (
+                      <>
+                        <span className="font-medium">{formatTnd(pay.total)}</span>
+                        <span className={`block text-xs ${pay.unpaid ? "text-red-700" : "text-ink"}`}>
+                          {pay.unpaid ? fill(messages.common.toPay, { amount: formatTnd(pay.unpaid) }) : messages.common.allPaid}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-muted">—</span>
+                    )}
+                  </span>
+                </span>
+              </PhoneCard>
+            );
+          })
+        )}
+      </PhoneList>
+      <TableCard className="hidden md:block">
         <table>
           <thead>
             <tr>

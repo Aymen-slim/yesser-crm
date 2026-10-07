@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ConfirmSubmit } from "@/components/client";
 import { ExpenseForm } from "@/components/record-forms";
-import { Banner, Disclosure, EmptyRow, PageHeader, Pagination, TableCard, coupleName } from "@/components/ui";
+import { Banner, Disclosure, EmptyRow, EmptyState, PageHeader, Pagination, PhoneCard, PhoneList, TableCard, coupleName } from "@/components/ui";
 import { deleteExpense } from "@/lib/actions";
 import { requireManager } from "@/lib/auth";
 import { PAGE_SIZE, formatDate, one } from "@/lib/constants";
@@ -57,7 +57,47 @@ export default async function ExpensesPage({
         />
       </Disclosure>
       </div>
-      <TableCard>
+      <PhoneList>
+        {(expenses.data ?? []).length === 0 ? (
+          <EmptyState>{messages.expenses.empty}</EmptyState>
+        ) : (
+          (expenses.data ?? []).map((expense) => {
+            const client = one(one(expense.weddings)?.clients);
+            return (
+              <PhoneCard key={expense.id}>
+                <span className="flex items-start justify-between gap-3">
+                  <span className="min-w-0">
+                    <span className="block font-medium">{expense.category}</span>
+                    {expense.note ? <span className="block text-xs text-muted">{expense.note}</span> : null}
+                    <span className="mt-1 block text-sm text-muted">{formatDate(expense.spent_on, locale)}</span>
+                  </span>
+                  <span className="shrink-0 font-medium">{formatTnd(expense.amount_millimes)}</span>
+                </span>
+                <span className="mt-2 block text-sm">
+                  {expense.wedding_id && client ? (
+                    <Link href={`/weddings/${expense.wedding_id}`}>{coupleName(client.partner_one_name, client.partner_two_name)}</Link>
+                  ) : (
+                    <span className="text-muted">{messages.common.studio}</span>
+                  )}
+                </span>
+                <span className="mt-3 flex items-center gap-3 border-t border-line pt-3">
+                  <Link href={editHref(expense.id)} className="text-sm">
+                    {messages.common.edit}
+                  </Link>
+                  <form action={deleteExpense}>
+                    <input type="hidden" name="id" value={expense.id} />
+                    <input type="hidden" name="return_to" value={returnTo} />
+                    <ConfirmSubmit message={fill(messages.expenses.deleteConfirm, { name: expense.category })}>
+                      {messages.common.delete}
+                    </ConfirmSubmit>
+                  </form>
+                </span>
+              </PhoneCard>
+            );
+          })
+        )}
+      </PhoneList>
+      <TableCard className="hidden md:block">
         <table>
           <thead>
             <tr>

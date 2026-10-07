@@ -4,9 +4,12 @@ import {
   Banner,
   Disclosure,
   EmptyRow,
+  EmptyState,
   FilterTabs,
   PageHeader,
   Pagination,
+  PhoneCard,
+  PhoneList,
   StatusBadge,
   TableCard,
   coupleName,
@@ -146,7 +149,45 @@ export default async function WeddingsPage({
           href: listHref({ sort: value }),
         }))}
       />
-      <TableCard>
+      <PhoneList>
+        {weddings.length === 0 ? (
+          <EmptyState>{status ? fill(messages.weddings.noneStatus, { status: term(messages, status) }) : messages.weddings.none}</EmptyState>
+        ) : (
+          weddings.map((wedding) => {
+            const client = one(wedding.clients);
+            const pack = one(wedding.packages);
+            const place = [wedding.venue_name, wedding.city].filter(Boolean).join(", ");
+            return (
+              <PhoneCard key={wedding.id} href={`/weddings/${wedding.id}`}>
+                <span className="flex items-start justify-between gap-3">
+                  <span className="font-medium">
+                    {client ? coupleName(client.partner_one_name, client.partner_two_name) : messages.common.wedding}
+                  </span>
+                  <StatusBadge status={wedding.status} />
+                </span>
+                <span className="mt-1 block text-sm text-muted">
+                  {formatDate(wedding.wedding_date, locale)}
+                  {wedding.start_time ? ` · ${wedding.start_time.slice(0, 5)}` : ""}
+                </span>
+                {(daysByWedding.get(wedding.id) ?? []).map((day) => (
+                  <span key={day.day_date} className="block text-xs text-muted">
+                    {formatDate(day.day_date, locale)}
+                    {day.label ? ` · ${day.label}` : ""}
+                  </span>
+                ))}
+                <span className="mt-1 block text-sm">{place || "—"}</span>
+                {(placesByWedding.get(wedding.id) ?? []).map((spot, index) => (
+                  <span key={`${spot.label}-${index}`} className="block text-xs text-muted">
+                    {[spot.label, spot.venue_name, spot.city].filter(Boolean).join(", ")}
+                  </span>
+                ))}
+                <span className="mt-1 block text-sm text-muted">{pack?.name ?? "—"}</span>
+              </PhoneCard>
+            );
+          })
+        )}
+      </PhoneList>
+      <TableCard className="hidden md:block">
         <table>
           <thead>
             <tr>

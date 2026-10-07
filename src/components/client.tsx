@@ -55,7 +55,7 @@ export function PrintButton({ label }: { label: string }) {
 export function DashboardPeriodField({ view, value, label }: { view: DashboardView; value: string; label: string }) {
   const router = useRouter();
   return (
-    <div className="w-44 shrink-0">
+    <div className="w-full min-w-0 md:w-44 md:shrink-0">
       <input
         type={view === "year" ? "number" : view === "day" ? "date" : "month"}
         inputMode={view === "year" ? "numeric" : undefined}
@@ -371,72 +371,183 @@ function navClass(active: boolean) {
   return `flex w-full items-center rounded-full px-3.5 py-2.5 text-sm font-medium no-underline transition-colors ${tone}`;
 }
 
-export function NavLinks({
+function isNavActive(pathname: string, href: string) {
+  if (href === "/") return pathname === "/";
+  if (href === "/clients" && pathname.startsWith("/leads")) return true;
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+const primaryHrefs: Record<string, string[]> = {
+  admin: ["/", "/weddings", "/calendar", "/payments"],
+  assistant: ["/weddings", "/calendar", "/clients", "/payments"],
+  member: ["/", "/weddings", "/calendar"],
+};
+
+export function NavLinks({ items }: { items: { href: string; label: string }[] }) {
+  const pathname = usePathname();
+  return (
+    <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3 pb-4">
+      {items.map((link) => {
+        const active = isNavActive(pathname, link.href);
+        return (
+          <Link
+            key={link.href}
+            href={link.href}
+            prefetch={false}
+            aria-current={active ? "page" : undefined}
+            className={navClass(active)}
+          >
+            {link.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+function NavIcon({ name }: { name: string }) {
+  const common = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, className: "h-5 w-5", "aria-hidden": true } as const;
+  if (name === "/") {
+    return (
+      <svg {...common}>
+        <path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (name === "/weddings") {
+    return (
+      <svg {...common}>
+        <circle cx="9" cy="12" r="4" />
+        <circle cx="15.5" cy="12" r="4" />
+      </svg>
+    );
+  }
+  if (name === "/calendar") {
+    return (
+      <svg {...common}>
+        <rect x="4" y="5" width="16" height="15" rx="2" />
+        <path d="M8 3.5v4M16 3.5v4M4 10h16" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (name === "/payments") {
+    return (
+      <svg {...common}>
+        <rect x="3" y="6" width="18" height="12" rx="2" />
+        <path d="M3 10h18" />
+      </svg>
+    );
+  }
+  if (name === "/clients") {
+    return (
+      <svg {...common}>
+        <circle cx="9" cy="9" r="3" />
+        <circle cx="16" cy="10" r="2.2" />
+        <path d="M4.5 19c.4-2.6 2.2-4 4.5-4s4.1 1.4 4.5 4" strokeLinecap="round" />
+        <path d="M14.5 19c.3-1.8 1.4-2.8 2.8-2.8 1.5 0 2.6 1 3 2.8" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common}>
+      <circle cx="6" cy="12" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="18" cy="12" r="1.2" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function BottomNav({
   items,
-  mobileFooter,
-  menuLabel,
+  role,
+  moreLabel,
   closeLabel,
   languageSwitcher,
-  layout = "mobile",
+  footer,
 }: {
   items: { href: string; label: string }[];
-  mobileFooter?: React.ReactNode;
-  menuLabel?: string;
-  closeLabel?: string;
-  languageSwitcher?: React.ReactNode;
-  layout?: "sidebar" | "mobile";
+  role: string;
+  moreLabel: string;
+  closeLabel: string;
+  languageSwitcher: React.ReactNode;
+  footer: React.ReactNode;
 }) {
   const pathname = usePathname();
   const [openedOn, setOpenedOn] = useState<string | null>(null);
   const open = openedOn === pathname;
-
-  const isActive = (href: string) => {
-    if (href === "/") return pathname === "/";
-    if (href === "/clients" && pathname.startsWith("/leads")) return true;
-    return pathname === href || pathname.startsWith(`${href}/`);
-  };
-
-  const links = items.map((link) => {
-    const active = isActive(link.href);
-    return (
-      <Link
-        key={link.href}
-        href={link.href}
-        prefetch={false}
-        aria-current={active ? "page" : undefined}
-        className={navClass(active)}
-      >
-        {link.label}
-      </Link>
-    );
-  });
-
-  if (layout === "sidebar") {
-    return (
-      <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3 pb-4">{links}</nav>
-    );
-  }
+  const primary = (primaryHrefs[role] ?? primaryHrefs.member)
+    .map((href) => items.find((item) => item.href === href))
+    .filter((item): item is { href: string; label: string } => Boolean(item));
+  const moreItems = items.filter((item) => !primary.some((link) => link.href === item.href));
+  const moreActive = moreItems.some((item) => isNavActive(pathname, item.href));
 
   return (
     <>
-      <div className="ml-auto flex shrink-0 items-center gap-2">
-        {languageSwitcher}
+      {open ? (
+        <div className="fixed inset-0 z-40 bg-black/40 print:hidden md:hidden" onClick={() => setOpenedOn(null)} />
+      ) : null}
+      {open ? (
+        <div
+          id="studio-nav"
+          className="fixed inset-x-3 z-50 max-h-[min(70vh,32rem)] overflow-y-auto rounded-3xl bg-surface p-3 shadow-[0_16px_40px_rgba(0,0,0,0.12)] print:hidden md:hidden"
+          style={{ bottom: "calc(4rem + env(safe-area-inset-bottom))" }}
+        >
+          {moreItems.length > 0 ? (
+            <nav className="flex flex-col gap-1">
+              {moreItems.map((link) => {
+                const active = isNavActive(pathname, link.href);
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    prefetch={false}
+                    aria-current={active ? "page" : undefined}
+                    className={navClass(active)}
+                  >
+                    {link.label}
+                  </Link>
+                );
+              })}
+            </nav>
+          ) : null}
+          <div className={moreItems.length > 0 ? "mt-3 border-t border-line pt-3" : undefined}>
+            {languageSwitcher}
+            {footer}
+          </div>
+        </div>
+      ) : null}
+      <nav className="fixed inset-x-0 bottom-0 z-50 grid border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] print:hidden md:hidden" style={{ gridTemplateColumns: `repeat(${primary.length + 1}, minmax(0, 1fr))` }}>
+        {primary.map((link) => {
+          const active = isNavActive(pathname, link.href);
+          return (
+            <Link
+              key={link.href}
+              href={link.href}
+              prefetch={false}
+              aria-current={active ? "page" : undefined}
+              className={`flex min-h-16 flex-col items-center justify-center gap-1 px-1 py-2 text-center text-[10px] leading-tight font-medium no-underline ${active ? "text-ink" : "text-muted"}`}
+            >
+              <span className={`flex h-7 w-7 items-center justify-center rounded-full ${active ? "bg-accent text-ink" : ""}`}>
+                <NavIcon name={link.href} />
+              </span>
+              {link.label}
+            </Link>
+          );
+        })}
         <button
           type="button"
-          className="ghost"
+          className="nav-tab"
           aria-expanded={open}
           aria-controls="studio-nav"
+          data-current={moreActive ? "page" : undefined}
           onClick={() => setOpenedOn(open ? null : pathname)}
         >
-          {open ? closeLabel : menuLabel}
+          <span className={`flex h-7 w-7 items-center justify-center rounded-full ${open || moreActive ? "bg-accent text-ink" : ""}`}>
+            <NavIcon name="more" />
+          </span>
+          {open ? closeLabel : moreLabel}
         </button>
-      </div>
-      {open ? (
-        <nav id="studio-nav" className="absolute inset-x-0 top-full z-30 flex flex-col gap-1 border-b border-line bg-surface px-4 py-3">
-          {links}
-          {mobileFooter}
-        </nav>
-      ) : null}
+      </nav>
     </>
   );
 }

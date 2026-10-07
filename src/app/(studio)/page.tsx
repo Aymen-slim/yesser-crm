@@ -259,24 +259,24 @@ export default async function DashboardPage({
       <div className="mb-8 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-sm text-muted">{formatDate(today, locale)}</p>
-          <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight md:text-5xl">
+          <h1 className="mt-2 font-display text-3xl font-semibold tracking-tight break-words md:text-5xl">
             {fill(messages.dash.hello, { name: profile.full_name.split(" ")[0] })}
           </h1>
           <div className="mt-5 flex flex-col gap-3">
-            <div className="inline-flex w-fit rounded-full bg-track p-1 text-sm" role="group" aria-label={messages.dash.period}>
+            <div className="flex w-full rounded-full bg-track p-1 text-sm md:inline-flex md:w-fit" role="group" aria-label={messages.dash.period}>
               {(["month", "year", "day"] as const).map((item) => (
                 <Link
                   key={item}
                   href={viewHref(item)}
                   prefetch={false}
                   aria-current={view === item ? "page" : undefined}
-                  className={`rounded-full px-4 py-2 no-underline ${view === item ? "bg-ink font-medium text-white" : "text-muted hover:text-ink"}`}
+                  className={`flex min-h-11 flex-1 items-center justify-center rounded-full px-4 py-2 no-underline md:flex-none ${view === item ? "bg-ink font-medium text-white" : "text-muted hover:text-ink"}`}
                 >
                   {item === "month" ? messages.dash.viewMonth : item === "year" ? messages.dash.viewYear : messages.dash.viewDay}
                 </Link>
               ))}
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex w-full flex-wrap items-center gap-2">
               {dashboardPeriodInRange(view, period.prev) ? (
                 <Link className="button ghost no-underline" href={`/?view=${view}&period=${period.prev}`} prefetch={false}>
                   ← {messages.common.previous}
@@ -299,7 +299,7 @@ export default async function DashboardPage({
         {admin ? (
           <div className="w-full shrink-0 overflow-hidden rounded-[1.75rem] bg-[linear-gradient(135deg,#76FB91_0%,#d8ffe3_58%,#ffffff_100%)] p-6 shadow-[0_16px_40px_rgba(118,251,145,0.28)] lg:max-w-sm">
             <p className="text-sm font-medium">{earnedLabel}</p>
-            <p className="mt-3 font-display text-4xl font-semibold tracking-tight">{formatTnd(periodEarnings)}</p>
+            <p className="mt-3 font-display text-3xl font-semibold tracking-tight md:text-4xl">{formatTnd(periodEarnings)}</p>
             <p className="mt-4 text-sm">
               {weddingsLabel}
               <span className="mt-1 block text-2xl font-semibold tracking-tight">{monthWeddings.count ?? 0}</span>

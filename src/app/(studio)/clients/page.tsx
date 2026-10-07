@@ -5,10 +5,13 @@ import {
   ContactLinks,
   Disclosure,
   EmptyRow,
+  EmptyState,
   Field,
   FilterTabs,
   PageHeader,
   Pagination,
+  PhoneCard,
+  PhoneList,
   StatusBadge,
   TableCard,
   coupleName,
@@ -226,7 +229,52 @@ export default async function CouplesPage({
         </Disclosure>
       ) : null}
 
-      <TableCard>
+      <PhoneList>
+        {tab === "booked" ? (
+          clientRows.length === 0 ? (
+            <EmptyState>{messages.couples.noBooked}</EmptyState>
+          ) : (
+            clientRows.map((client) => {
+              const dates = ((client.weddings ?? []) as { wedding_date: string }[]).map((w) => w.wedding_date).sort();
+              return (
+                <PhoneCard key={client.id}>
+                  <Link href={`/clients/${client.id}`} className="font-medium">
+                    {coupleName(client.partner_one_name, client.partner_two_name)}
+                  </Link>
+                  {client.email ? <span className="mt-0.5 block text-xs text-muted">{client.email}</span> : null}
+                  <span className="mt-2 block">
+                    <ContactLinks phone={client.phone} whatsappPhone={whatsappPhones.get(client.id)} />
+                  </span>
+                  <span className="mt-1 block text-sm text-muted">{client.city || "—"}</span>
+                  <span className="mt-1 block text-sm">{formatDate(dates[dates.length - 1], locale)}</span>
+                </PhoneCard>
+              );
+            })
+          )
+        ) : leadRows.length === 0 ? (
+          <EmptyState>{tab === "lost" ? messages.couples.noLost : messages.couples.noOpen}</EmptyState>
+        ) : (
+          leadRows.map((lead) => (
+            <PhoneCard key={lead.id}>
+              <span className="flex items-start justify-between gap-3">
+                <Link href={`/leads/${lead.id}`} className="font-medium">
+                  {coupleName(lead.partner_one_name, lead.partner_two_name)}
+                </Link>
+                <StatusBadge status={lead.status} />
+              </span>
+              {lead.city ? <span className="mt-0.5 block text-xs text-muted">{lead.city}</span> : null}
+              <span className="mt-2 block">
+                <ContactLinks phone={lead.phone} whatsappPhone={whatsappPhones.get(lead.id)} />
+              </span>
+              <span className="mt-1 block text-sm text-muted">
+                {term(messages, lead.source)}
+                {lead.wedding_date ? ` · ${formatDate(lead.wedding_date, locale)}` : ""}
+              </span>
+            </PhoneCard>
+          ))
+        )}
+      </PhoneList>
+      <TableCard className="hidden md:block">
         {tab === "booked" ? (
           <table>
             <thead>

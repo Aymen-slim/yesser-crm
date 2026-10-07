@@ -32,8 +32,8 @@ export function PageHeader({
         </Link>
       ) : null}
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="font-display text-4xl font-semibold tracking-tight">{title}</h1>
+        <div className="min-w-0">
+          <h1 className="font-display text-3xl font-semibold tracking-tight break-words md:text-4xl">{title}</h1>
           {subtitle ? <div className="mt-1.5 text-sm text-muted">{subtitle}</div> : null}
         </div>
         {action}
@@ -92,7 +92,7 @@ export function Section({
 }) {
   return (
     <Card className={`p-6 ${className}`}>
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-4 flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <h2 className="text-sm font-semibold">{title}</h2>
         {action}
       </div>
@@ -101,12 +101,27 @@ export function Section({
   );
 }
 
-export function TableCard({ children }: { children: React.ReactNode }) {
+export function TableCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <Card className="overflow-hidden">
+    <Card className={`overflow-hidden ${className}`}>
       <div className="overflow-x-auto">{children}</div>
     </Card>
   );
+}
+
+export function PhoneList({ children }: { children: React.ReactNode }) {
+  return <div className="grid gap-3 md:hidden">{children}</div>;
+}
+
+export function PhoneCard({ href, children }: { href?: string; children: React.ReactNode }) {
+  if (href) {
+    return (
+      <Link href={href} className="block rounded-[1.5rem] bg-surface p-4 text-inherit no-underline shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
+        {children}
+      </Link>
+    );
+  }
+  return <Card className="p-4">{children}</Card>;
 }
 
 export function Disclosure({
@@ -265,7 +280,7 @@ export async function Pagination({
     return `${path}?${params}`;
   };
   return (
-    <div className="mt-4 flex items-center justify-between text-sm">
+    <div className="mt-4 flex flex-col items-start gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
       <span className="text-muted">{fill(messages.common.page, { page, pages, count })}</span>
       <div className="flex gap-2">
         {page > 1 ? (
@@ -296,7 +311,7 @@ export function FilterTabs({
         <Link
           key={item.value}
           href={item.href}
-          className={`rounded-full px-4 py-2 whitespace-nowrap no-underline ${
+          className={`inline-flex min-h-11 items-center rounded-full px-4 py-2 whitespace-nowrap no-underline ${
             item.value === active ? "bg-ink font-medium text-white" : "text-muted hover:bg-surface hover:text-ink"
           }`}
         >
@@ -322,7 +337,7 @@ export async function MonthNav({
 }) {
   const messages = getMessages(await getLocale());
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap gap-2">
       <Link className="button ghost no-underline" href={`${path}?month=${prev}`} prefetch={false}>
         ← {messages.common.previous}
       </Link>

@@ -428,7 +428,7 @@ export default async function WeddingPage({
                 {(tasks.data ?? []).map((task) => {
                   const late = task.status !== "done" && task.due_date && task.due_date < today;
                   return (
-                    <li key={task.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+                    <li key={task.id} className="flex flex-col items-stretch gap-3 py-3 text-sm md:flex-row md:flex-wrap md:items-center md:justify-between">
                       <span className="min-w-0">
                         <span className={`flex items-center gap-2 font-medium ${task.status === "done" ? "text-muted line-through" : ""}`}>
                           {task.title}
@@ -441,7 +441,7 @@ export default async function WeddingPage({
                           {task.assignee_id ? ` · ${memberNames.get(task.assignee_id) ?? messages.common.formerMember}` : ""}
                         </span>
                       </span>
-                      <span className="flex items-center gap-1">
+                      <span className="flex flex-col items-stretch gap-2 md:flex-row md:items-center">
                         <TaskStatusForm task={task} />
                         {manager ? (
                           <form action={deleteTask}>
@@ -475,7 +475,7 @@ export default async function WeddingPage({
                   {(payments.data ?? []).map((payment) => {
                     const overdue = !payment.paid_at && payment.due_date && payment.due_date < today;
                     return (
-                      <li key={payment.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+                      <li key={payment.id} className="flex flex-col items-stretch gap-3 py-3 text-sm md:flex-row md:flex-wrap md:items-center md:justify-between">
                         <span>
                           <span className="flex items-center gap-2 font-medium">
                             {payment.label}
@@ -488,7 +488,7 @@ export default async function WeddingPage({
                               : fill(messages.common.dueOn, { date: formatDate(payment.due_date, locale) })}
                           </span>
                         </span>
-                        <span className="flex flex-wrap items-center justify-end gap-2">
+                        <span className="flex flex-col items-stretch gap-2 md:flex-row md:flex-wrap md:items-center md:justify-end">
                           {payment.paid_at ? null : <MarkPaidForm paymentId={payment.id} returnTo={backPath} />}
                           <Link href={`${backPath}?edit=${payment.id}#payment-editor`} className="text-sm">
                             {messages.common.edit}

@@ -122,6 +122,30 @@
     opacity: 1;
   }
 
+  button.nav-tab {
+    width: 100%;
+    min-height: 4rem;
+    flex-direction: column;
+    gap: 0.25rem;
+    border-radius: 0;
+    background: transparent;
+    color: var(--color-muted);
+    padding: 0.5rem 0.25rem;
+    font-size: 0.625rem;
+    font-weight: 500;
+    line-height: 1.2;
+    white-space: normal;
+    box-shadow: none;
+  }
+
+  button.nav-tab:hover,
+  button.nav-tab[aria-expanded="true"],
+  button.nav-tab[data-current="page"] {
+    background: transparent;
+    color: var(--color-ink);
+    opacity: 1;
+  }
+
   table {
     width: 100%;
     border-collapse: collapse;
@@ -186,6 +210,17 @@
 
   [role="group"] button[aria-pressed="true"]:hover {
     color: #fff;
+  }
+
+  @media (max-width: 767px) {
+    button:not(.nav-tab),
+    .button {
+      min-height: 44px;
+    }
+
+    [role="group"] button {
+      min-height: 0;
+    }
   }
 }
 

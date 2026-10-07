@@ -629,14 +629,14 @@ export async function MarkPaidForm({ paymentId, returnTo }: { paymentId: string;
   const messages = await copy();
   const f = messages.forms;
   return (
-    <form action={markPaymentPaid} className="flex flex-wrap items-center gap-2">
+    <form action={markPaymentPaid} className="grid w-full gap-2 md:flex md:w-auto md:flex-wrap md:items-center">
       <input type="hidden" name="id" value={paymentId} />
       {returnTo ? <input type="hidden" name="return_to" value={returnTo} /> : null}
-      <input name="paid_at" type="date" required defaultValue={todayInTunis()} className="max-w-40" aria-label={f.paidOn} />
-      <select name="method" defaultValue="cash" className="max-w-36" aria-label={f.method}>
+      <input name="paid_at" type="date" required defaultValue={todayInTunis()} className="w-full md:max-w-40" aria-label={f.paidOn} />
+      <select name="method" defaultValue="cash" className="w-full md:max-w-36" aria-label={f.method}>
         <Options values={PAYMENT_METHODS} messages={messages} />
       </select>
-      <SubmitButton className="ghost" pendingLabel="…">
+      <SubmitButton className="ghost w-full md:w-auto" pendingLabel="…">
         {f.markPaid}
       </SubmitButton>
     </form>
@@ -824,16 +824,16 @@ export async function TaskStatusForm({
   const messages = await copy();
   const f = messages.forms;
   return (
-    <form action={saveTask} className="flex items-center gap-2">
+    <form action={saveTask} className="flex flex-col gap-2 md:flex-row md:items-center">
       <input type="hidden" name="id" value={task.id} />
       <input type="hidden" name="wedding_id" value={task.wedding_id} />
       <input type="hidden" name="title" value={task.title} />
       <input type="hidden" name="due_date" value={task.due_date ?? ""} />
       <input type="hidden" name="assignee_id" value={task.assignee_id ?? ""} />
-      <select name="status" defaultValue={task.status} className="max-w-28" aria-label={fill(f.statusOf, { title: task.title })}>
+      <select name="status" defaultValue={task.status} className="w-full md:max-w-28" aria-label={fill(f.statusOf, { title: task.title })}>
         <Options values={TASK_STATUSES} messages={messages} />
       </select>
-      <SubmitButton className="ghost" pendingLabel="…">
+      <SubmitButton className="ghost w-full md:w-auto" pendingLabel="…">
         {messages.common.update}
       </SubmitButton>
     </form>

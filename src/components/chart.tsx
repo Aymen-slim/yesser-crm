@@ -20,6 +20,7 @@ export function EarningsChart({
   const group = (width - pad * 2) / months.length;
   const earnings = months.reduce((sum, month) => sum + month.earnings, 0);
   const expenses = months.reduce((sum, month) => sum + month.expenses, 0);
+  const scroll = months.length > 12;
 
   return (
     <Card className="mb-6 p-6">
@@ -47,7 +48,8 @@ export function EarningsChart({
           </div>
         </dl>
       </div>
-      <svg viewBox={`0 0 ${width} ${height + 24}`} className="w-full font-sans" role="img" aria-label={copy.aria}>
+      <div className={scroll ? "overflow-x-auto" : undefined}>
+      <svg viewBox={`0 0 ${width} ${height + 24}`} className="w-full font-sans" style={scroll ? { minWidth: months.length * 48 } : undefined} role="img" aria-label={copy.aria}>
         {[0.25, 0.5, 0.75, 1].map((step) => (
           <line key={step} x1={0} x2={width} y1={height - height * step} y2={height - height * step} stroke="#ededed" />
         ))}
@@ -72,6 +74,7 @@ export function EarningsChart({
           );
         })}
       </svg>
+      </div>
     </Card>
   );
 }

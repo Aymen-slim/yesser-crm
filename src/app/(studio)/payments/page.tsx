@@ -5,9 +5,12 @@ import {
   Banner,
   Disclosure,
   EmptyRow,
+  EmptyState,
   FilterTabs,
   PageHeader,
   Pagination,
+  PhoneCard,
+  PhoneList,
   StatusBadge,
   TableCard,
   coupleName,
@@ -116,7 +119,58 @@ export default async function PaymentsPage({
           })}
         </p>
       ) : null}
-      <TableCard>
+      <PhoneList>
+        {(payments.data ?? []).length === 0 ? (
+          <EmptyState>{messages.payments.empty}</EmptyState>
+        ) : (
+          (payments.data ?? []).map((payment) => {
+            const wedding = one(payment.weddings);
+            const client = one(wedding?.clients);
+            const overdue = !payment.paid_at && payment.due_date && payment.due_date < today;
+            return (
+              <PhoneCard key={payment.id}>
+                <span className="flex items-start justify-between gap-3">
+                  <span className="min-w-0">
+                    <Link href={`/weddings/${payment.wedding_id}`} className="font-medium">
+                      {client ? coupleName(client.partner_one_name, client.partner_two_name) : messages.common.wedding}
+                    </Link>
+                    {wedding ? <span className="block text-xs text-muted">{formatDate(wedding.wedding_date, locale)}</span> : null}
+                  </span>
+                  <StatusBadge status={payment.paid_at ? "paid" : overdue ? "overdue" : "due"} />
+                </span>
+                <span className="mt-2 block text-sm">{payment.label}</span>
+                <span className="mt-1 block font-medium">{formatTnd(payment.amount_millimes)}</span>
+                <span className="mt-1 block text-xs text-muted">
+                  {payment.paid_at
+                    ? `${formatDate(payment.paid_at, locale)}${payment.method ? ` · ${term(messages, payment.method)}` : ""}`
+                    : payment.due_date
+                      ? fill(messages.common.dueOn, { date: formatDate(payment.due_date, locale) })
+                      : messages.common.noDueDate}
+                </span>
+                <span className="mt-3 flex flex-col gap-2 border-t border-line pt-3">
+                  {payment.paid_at ? null : <MarkPaidForm paymentId={payment.id} returnTo={returnTo} />}
+                  <Link href={`/invoices/new?wedding=${payment.wedding_id}`} className="text-sm">
+                    {messages.invoice.make}
+                  </Link>
+                  <span className="flex items-center gap-3">
+                    <Link href={editHref(payment.id)} className="text-sm">
+                      {messages.common.edit}
+                    </Link>
+                    <form action={deletePayment}>
+                      <input type="hidden" name="id" value={payment.id} />
+                      <input type="hidden" name="return_to" value={returnTo} />
+                      <ConfirmSubmit message={fill(messages.payments.deleteConfirm, { name: payment.label })}>
+                        {messages.common.delete}
+                      </ConfirmSubmit>
+                    </form>
+                  </span>
+                </span>
+              </PhoneCard>
+            );
+          })
+        )}
+      </PhoneList>
+      <TableCard className="hidden md:block">
         <table>
           <thead>
             <tr>
