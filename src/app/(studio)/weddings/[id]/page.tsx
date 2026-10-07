@@ -5,6 +5,7 @@ import {
   AssignForm,
   FileForm,
   MarkPaidForm,
+  MarkUnpaidForm,
   NoteForm,
   PaymentForm,
   TaskForm,
@@ -489,7 +490,11 @@ export default async function WeddingPage({
                           </span>
                         </span>
                         <span className="flex flex-col items-stretch gap-2 md:flex-row md:flex-wrap md:items-center md:justify-end">
-                          {payment.paid_at ? null : <MarkPaidForm paymentId={payment.id} returnTo={backPath} />}
+                          {payment.paid_at ? (
+                            <MarkUnpaidForm paymentId={payment.id} returnTo={backPath} />
+                          ) : (
+                            <MarkPaidForm paymentId={payment.id} returnTo={backPath} />
+                          )}
                           <Link href={`${backPath}?edit=${payment.id}#payment-editor`} className="text-sm">
                             {messages.common.edit}
                           </Link>

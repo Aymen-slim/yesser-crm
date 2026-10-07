@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ConfirmSubmit } from "@/components/client";
-import { MarkPaidForm, PaymentForm } from "@/components/record-forms";
+import { MarkPaidForm, MarkUnpaidForm, PaymentForm } from "@/components/record-forms";
 import {
   Banner,
   Disclosure,
@@ -148,7 +148,11 @@ export default async function PaymentsPage({
                       : messages.common.noDueDate}
                 </span>
                 <span className="mt-3 flex flex-col gap-2 border-t border-line pt-3">
-                  {payment.paid_at ? null : <MarkPaidForm paymentId={payment.id} returnTo={returnTo} />}
+                  {payment.paid_at ? (
+                    <MarkUnpaidForm paymentId={payment.id} returnTo={returnTo} />
+                  ) : (
+                    <MarkPaidForm paymentId={payment.id} returnTo={returnTo} />
+                  )}
                   <Link href={`/invoices/new?wedding=${payment.wedding_id}`} className="text-sm">
                     {messages.invoice.make}
                   </Link>
@@ -211,7 +215,11 @@ export default async function PaymentsPage({
                   </td>
                   <td>
                     <div className="flex flex-col items-end gap-2">
-                      {payment.paid_at ? null : <MarkPaidForm paymentId={payment.id} returnTo={returnTo} />}
+                      {payment.paid_at ? (
+                        <MarkUnpaidForm paymentId={payment.id} returnTo={returnTo} />
+                      ) : (
+                        <MarkPaidForm paymentId={payment.id} returnTo={returnTo} />
+                      )}
                       <span className="flex items-center gap-2">
                         <Link href={editHref(payment.id)} className="text-sm">
                           {messages.common.edit}

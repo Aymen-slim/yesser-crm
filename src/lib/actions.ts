@@ -788,13 +788,16 @@ export async function savePayment(formData: FormData) {
   const parsed = parseForm(paymentSchema, formData);
   if ("error" in parsed) fail(back, parsed.error);
   const supabase = await createClient();
+  const paidAt = emptyToNull(parsed.data.paid_at);
+  const method = emptyToNull(parsed.data.method);
+  const unpaid = !paidAt || !method;
   const row = {
     wedding_id: parsed.data.wedding_id,
     label: parsed.data.label,
     amount_millimes: parsed.data.amount,
     due_date: emptyToNull(parsed.data.due_date),
-    paid_at: emptyToNull(parsed.data.paid_at),
-    method: emptyToNull(parsed.data.method),
+    paid_at: unpaid ? null : paidAt,
+    method: unpaid ? null : method,
     note: parsed.data.note,
   };
   if (id) {
@@ -937,11 +940,25 @@ export async function markPaymentPaid(formData: FormData) {
     .select("wedding_id")
     .maybeSingle();
   if (error || !data) fail(back, "update_payment_failed");
-  revalidatePath("/payments");
-  revalidatePath(`/weddings/${data.wedding_id}`);
-  revalidatePath(`/weddings/${data.wedding_id}/contract`);
-  revalidatePath("/");
+  revalidateWeddingMoney(data.wedding_id);
   done(back, "payment_paid");
+}
+
+export async function markPaymentUnpaid(formData: FormData) {
+  await requireManager();
+  const back = returnTo(formData, "/payments");
+  const id = String(formData.get("id") ?? "");
+  if (!UUID.test(id)) fail(back, "update_payment_failed");
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("payments")
+    .update({ paid_at: null, method: null })
+    .eq("id", id)
+    .select("id, wedding_id")
+    .maybeSingle();
+  if (error || !data) fail(back, "update_payment_failed");
+  revalidateWeddingMoney(data.wedding_id);
+  done(back, "payment_unpaid");
 }
 
 export async function saveExpense(formData: FormData) {

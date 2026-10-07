@@ -462,7 +462,7 @@ test("direct account-management actions stay admin-only", async () => {
 test("members cannot invoke management actions directly", async () => {
   await withSupabaseEnv(async () => {
     const { actions } = actionsFixture("member");
-    for (const name of ["saveLead", "convertLead", "saveClient", "deleteClient", "savePackage", "deletePackage", "saveExtra", "deleteExtra", "saveWeddingOffer", "addWeddingExtra", "updateWeddingExtra", "removeWeddingExtra", "addWeddingDay", "removeWeddingDay", "addWeddingPlace", "removeWeddingPlace", "saveWeddingFeatures", "resetWeddingFeatures", "saveWedding", "deleteWedding", "savePayment", "deletePayment", "markPaymentPaid", "saveExpense", "deleteExpense", "saveInvoice", "saveContract", "resetContract", "assignMember", "updateAssignment", "unassignMember", "setCrewPaid", "deleteTask", "quickBook", "deleteWeddingFile"]) {
+    for (const name of ["saveLead", "convertLead", "saveClient", "deleteClient", "savePackage", "deletePackage", "saveExtra", "deleteExtra", "saveWeddingOffer", "addWeddingExtra", "updateWeddingExtra", "removeWeddingExtra", "addWeddingDay", "removeWeddingDay", "addWeddingPlace", "removeWeddingPlace", "saveWeddingFeatures", "resetWeddingFeatures", "saveWedding", "deleteWedding", "savePayment", "deletePayment", "markPaymentPaid", "markPaymentUnpaid", "saveExpense", "deleteExpense", "saveInvoice", "saveContract", "resetContract", "assignMember", "updateAssignment", "unassignMember", "setCrewPaid", "deleteTask", "quickBook", "deleteWeddingFile"]) {
       await assert.rejects(actions[name](new FormData()), { message: "REDIRECT:/" }, name);
     }
   });
@@ -732,6 +732,59 @@ test("monthly pay uses inclusive start, exclusive end, and preserves zero agreed
   assert.equal(jobs.get("crew-a").length, 2);
   assert.equal(jobs.get("crew-a")[0].pay, 0);
   assert.equal(payTotals([...jobs.values()].flat()).unpaid, 125000);
+});
+
+test("a manager can mark a paid installment unpaid from the list or the edit form", async () => {
+  await withSupabaseEnv(async () => {
+    const paymentId = "32345678-1234-4234-8234-123456789012";
+    const stored = { id: paymentId, wedding_id: payWeddingId, amount_millimes: 500000, paid_at: "2026-10-01", method: "cash" };
+    const supabase = { from: (table) => {
+      assert.equal(table, "payments");
+      return {
+        update(row) { Object.assign(stored, row); return this; },
+        select() { return this; },
+        eq() { return this; },
+        maybeSingle: async () => ({ data: stored, error: null }),
+      };
+    } };
+    const { actions } = actionsFixture("admin", supabase);
+    const form = new FormData();
+    form.set("id", paymentId);
+    await assert.rejects(actions.markPaymentUnpaid(form), /notice=payment_unpaid/);
+    assert.equal(stored.paid_at, null);
+    assert.equal(stored.method, null);
+    assert.equal(stored.amount_millimes, 500000);
+
+    const edit = new FormData();
+    edit.set("id", paymentId);
+    edit.set("wedding_id", payWeddingId);
+    edit.set("label", "Deposit");
+    edit.set("amount", "500.000");
+    edit.set("paid_at", "2026-10-01");
+    edit.set("method", "cash");
+    await assert.rejects(actions.savePayment(edit), /notice=payment_saved/);
+    assert.equal(stored.paid_at, "2026-10-01");
+    assert.equal(stored.method, "cash");
+    assert.equal(stored.amount_millimes, 500000);
+
+    edit.set("method", "");
+    await assert.rejects(actions.savePayment(edit), /notice=payment_saved/);
+    assert.equal(stored.paid_at, null);
+    assert.equal(stored.method, null);
+    assert.equal(stored.amount_millimes, 500000);
+
+    edit.set("paid_at", "2026-10-01");
+    edit.set("method", "cash");
+    await assert.rejects(actions.savePayment(edit), /notice=payment_saved/);
+    edit.set("paid_at", "");
+    await assert.rejects(actions.savePayment(edit), /notice=payment_saved/);
+    assert.equal(stored.paid_at, null);
+    assert.equal(stored.method, null);
+    assert.equal(stored.amount_millimes, 500000);
+
+    form.set("id", "not-a-uuid");
+    await assert.rejects(actions.markPaymentUnpaid(form), /error=update_payment_failed/);
+  });
 });
 
 test("Team profile failures show an error rather than an empty list or not-found", async () => {

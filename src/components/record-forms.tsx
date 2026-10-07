@@ -5,6 +5,7 @@ import {
   assignMember,
   convertLead,
   markPaymentPaid,
+  markPaymentUnpaid,
   quickBook,
   saveClient,
   saveExpense,
@@ -603,6 +604,7 @@ export async function PaymentForm({
       </Field>
       <Field label={f.paidOn}>
         <input name="paid_at" type="date" defaultValue={payment?.paid_at ?? ""} />
+        <span className="text-xs text-muted">{f.unpaidHint}</span>
       </Field>
       <Field label={f.method}>
         <select name="method" defaultValue={payment?.method ?? ""}>
@@ -621,6 +623,19 @@ export async function PaymentForm({
           </Link>
         ) : null}
       </FormActions>
+    </form>
+  );
+}
+
+export async function MarkUnpaidForm({ paymentId, returnTo }: { paymentId: string; returnTo?: string }) {
+  const messages = await copy();
+  return (
+    <form action={markPaymentUnpaid}>
+      <input type="hidden" name="id" value={paymentId} />
+      {returnTo ? <input type="hidden" name="return_to" value={returnTo} /> : null}
+      <SubmitButton className="ghost w-full md:w-auto" pendingLabel="…">
+        {messages.forms.markUnpaid}
+      </SubmitButton>
     </form>
   );
 }
