@@ -25,6 +25,7 @@ export type ContractBlanks = {
   signed_place: string;
   signed_day: string;
   signed_month: string;
+  signed_year: string;
 };
 
 export type ScheduleRow = { date: string; place: string };
@@ -141,6 +142,7 @@ const KEYS = [
   "signed_place",
   "signed_day",
   "signed_month",
+  "signed_year",
 ] as const;
 
 export function readContractBlanks(raw: unknown, fallback: ContractBlanks): ContractBlanks {

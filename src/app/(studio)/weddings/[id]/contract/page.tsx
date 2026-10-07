@@ -89,6 +89,7 @@ export default async function WeddingContractPage({
     signed_place: "",
     signed_day: "",
     signed_month: "",
+    signed_year: wedding.wedding_date?.slice(0, 4) || "2027",
   };
   const fields = saved.data ? readContractBlanks(saved.data.fields, defaults) : defaults;
 

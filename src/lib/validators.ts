@@ -247,6 +247,7 @@ export const contractSchema = z.object({
   signed_place: contractText(80),
   signed_day: contractText(2),
   signed_month: contractText(2),
+  signed_year: contractText(4),
 });
 
 export const invoiceSchema = z.object({

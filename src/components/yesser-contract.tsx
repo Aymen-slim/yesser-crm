@@ -89,6 +89,21 @@ export function YesserContract({
           min-width: 220px;
           border-bottom: 1px solid #000;
         }
+        .yesser-contract .sign-block {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 24px;
+          margin-top: 13px;
+        }
+        .yesser-contract .sign-block h2 { margin-top: 0; }
+        .yesser-contract .studio-stamp {
+          width: 96px;
+          height: 96px;
+          flex: none;
+          margin-left: auto;
+          object-fit: contain;
+        }
         .yesser-contract .page-two { break-before: page; }
         .yesser-contract button {
           all: unset;
@@ -119,7 +134,10 @@ export function YesserContract({
           <p className="text-[20px] leading-none font-bold">Yesser Barka</p>
           <p className="mt-1.5 text-[8.5pt] tracking-[0.16em]">WEDDING PHOTOGRAPHY</p>
           <h1 className="mt-4 text-[15px] font-bold">CONTRAT DE PRESTATIONS</h1>
-          <p className="mt-1 text-[8.5pt]">Photographie & vidéographie de mariage — Saison 2027</p>
+          <p className="mt-1 text-[8.5pt]">
+            Photographie & vidéographie de mariage — Saison{" "}
+            <Blank name="signed_year" value={fields.signed_year} onChange={set("signed_year")} size={4} maxLength={4} />
+          </p>
         </header>
 
         <h2>1. PARTIES AU CONTRAT</h2>
@@ -324,18 +342,24 @@ export function YesserContract({
             La signature du présent contrat vaut acceptation de l’ensemble des conditions qui y sont mentionnées. Toute modification importante devra être convenue par écrit.
           </p>
 
-          <h2>16. SIGNATURES</h2>
-          <p>
-            Fait à <Blank name="signed_place" value={fields.signed_place} onChange={set("signed_place")} size={24} maxLength={80} />, le{" "}
-            <Blank name="signed_day" value={fields.signed_day} onChange={set("signed_day")} size={2} maxLength={2} /> /{" "}
-            <Blank name="signed_month" value={fields.signed_month} onChange={set("signed_month")} size={2} maxLength={2} /> / 2027
-          </p>
-          <p className="mt-4">
-            Le Prestataire — Yesser Barka Photography : <span className="sign-line" />
-          </p>
-          <p className="mt-4">
-            Les Clients / Mariés : <span className="sign-line" />
-          </p>
+          <div className="sign-block">
+            <div>
+              <h2>16. SIGNATURES</h2>
+              <p>
+                Fait à <Blank name="signed_place" value={fields.signed_place} onChange={set("signed_place")} size={24} maxLength={80} />, le{" "}
+                <Blank name="signed_day" value={fields.signed_day} onChange={set("signed_day")} size={2} maxLength={2} /> /{" "}
+                <Blank name="signed_month" value={fields.signed_month} onChange={set("signed_month")} size={2} maxLength={2} /> /{" "}
+                <Blank name="signed_year" value={fields.signed_year} onChange={set("signed_year")} size={4} maxLength={4} />
+              </p>
+              <p className="mt-4">
+                Le Prestataire — Yesser Barka Photography : <span className="sign-line" />
+              </p>
+              <p className="mt-4">
+                Les Clients / Mariés : <span className="sign-line" />
+              </p>
+            </div>
+            <img src="/yb-stamp.svg" alt="Tampon Yesser Barka Photography" className="studio-stamp" />
+          </div>
         </div>
       </article>
     </form>
