@@ -17,10 +17,10 @@ import {
   coupleName,
 } from "@/components/ui";
 import { requireManager } from "@/lib/auth";
-import { PAGE_SIZE, formatDate } from "@/lib/constants";
+import { PAGE_SIZE, formatDate, phoneSearchDigits } from "@/lib/constants";
 import { fill, getMessages, term } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
-import { getWhatsappPhones } from "@/lib/supabase/contacts";
+import { findIdsByWhatsapp, getWhatsappPhones, phoneMatchFilter } from "@/lib/supabase/contacts";
 import { createClient } from "@/lib/supabase/server";
 
 export async function generateMetadata() {
@@ -68,7 +68,7 @@ function likePattern(value: string) {
 export default async function CouplesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; notice?: string; page?: string; tab?: string; q?: string; city?: string; from?: string; to?: string }>;
+  searchParams: Promise<{ error?: string; notice?: string; page?: string; tab?: string; q?: string; phone?: string; city?: string; from?: string; to?: string }>;
 }) {
   await requireManager();
   const locale = await getLocale();
@@ -78,12 +78,16 @@ export default async function CouplesPage({
   const page = Math.max(1, Number(params.page) || 1);
   const fromRow = (page - 1) * PAGE_SIZE;
   const q = searchText(params.q);
+  const phone = phoneSearchDigits(params.phone);
   let from = isoDate(params.from);
   let to = isoDate(params.to);
   if (from && to && from > to) [from, to] = [to, from];
   const city = searchText(params.city);
-  const filters = { tab, ...(q ? { q } : {}), ...(city ? { city } : {}), ...(from ? { from } : {}), ...(to ? { to } : {}) };
+  const filters = { tab, ...(q ? { q } : {}), ...(phone ? { phone } : {}), ...(city ? { city } : {}), ...(from ? { from } : {}), ...(to ? { to } : {}) };
   const supabase = await createClient();
+  const [leadNumberIds, clientNumberIds] = phone
+    ? await Promise.all([findIdsByWhatsapp(supabase, "leads", phone), findIdsByWhatsapp(supabase, "clients", phone)])
+    : [[], []];
 
   let dateIds: string[] | null = null;
   let cityIds: string[] = [];
@@ -102,6 +106,8 @@ export default async function CouplesPage({
   const filterLeads = <T,>(query: T) => {
     const builder = query as CoupleFilterQuery;
     if (q) builder.or(`partner_one_name.ilike.${likePattern(q)},partner_two_name.ilike.${likePattern(q)}`);
+    const leadPhone = phoneMatchFilter(phone, leadNumberIds);
+    if (leadPhone) builder.or(leadPhone);
     if (city) builder.ilike("city", `%${city}%`);
     if (from) builder.gte("wedding_date", from);
     if (to) builder.lte("wedding_date", to);
@@ -111,6 +117,8 @@ export default async function CouplesPage({
   const filterClients = <T,>(query: T) => {
     const builder = query as CoupleFilterQuery;
     if (q) builder.or(`partner_one_name.ilike.${likePattern(q)},partner_two_name.ilike.${likePattern(q)}`);
+    const clientPhone = phoneMatchFilter(phone, clientNumberIds);
+    if (clientPhone) builder.or(clientPhone);
     if (dateIds) builder.in("id", dateIds.length ? dateIds : [NIL]);
     if (city) {
       const parts = [`city.ilike.${likePattern(city)}`];
@@ -174,12 +182,13 @@ export default async function CouplesPage({
   const hrefFor = (value: (typeof TABS)[number]) => {
     const search = new URLSearchParams({ tab: value });
     if (q) search.set("q", q);
+    if (phone) search.set("phone", phone);
     if (city) search.set("city", city);
     if (from) search.set("from", from);
     if (to) search.set("to", to);
     return `/clients?${search}`;
   };
-  const filtering = Boolean(q || city || from || to);
+  const filtering = Boolean(q || phone || city || from || to);
 
   return (
     <div>
@@ -194,10 +203,13 @@ export default async function CouplesPage({
         ]}
       />
 
-      <form method="get" className="mb-6 grid gap-4 md:grid-cols-2 lg:grid-cols-6">
+      <form method="get" className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         <input type="hidden" name="tab" value={tab} />
         <Field label={messages.couples.filterName}>
           <input name="q" defaultValue={q} placeholder={messages.couples.nameHint} />
+        </Field>
+        <Field label={messages.couples.filterPhone}>
+          <input name="phone" inputMode="tel" defaultValue={phone} placeholder={messages.couples.numberHint} autoComplete="off" />
         </Field>
         <Field label={messages.couples.filterPlace}>
           <input name="city" defaultValue={city} placeholder={messages.couples.placeHint} />
@@ -208,7 +220,7 @@ export default async function CouplesPage({
         <Field label={messages.couples.filterTo}>
           <input name="to" type="date" defaultValue={to} />
         </Field>
-        <div className="flex items-end gap-2 lg:col-span-2">
+        <div className="flex items-end gap-2">
           <button type="submit">{messages.couples.filterApply}</button>
           {filtering ? (
             <Link href={`/clients?tab=${tab}`} className="button ghost no-underline">

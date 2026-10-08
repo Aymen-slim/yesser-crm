@@ -5,7 +5,7 @@ import { ContractResetButton, YesserContract } from "@/components/yesser-contrac
 import { Banner, coupleName } from "@/components/ui";
 import { resetContract, saveContract } from "@/lib/actions";
 import { requireManager } from "@/lib/auth";
-import { encodeSchedule, formatDt, guessPack, packFields, readContractBlanks, type ContractBlanks, type ScheduleRow } from "@/lib/contract";
+import { applyFreshSchedule, buildWeddingSchedule, encodeSchedule, formatDt, freshScheduleRows, guessPack, packFields, readContractBlanks, type ContractBlanks } from "@/lib/contract";
 import { one } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/server";
 
@@ -37,8 +37,8 @@ export default async function WeddingContractPage({
       .eq("id", id)
       .maybeSingle(),
     supabase.from("wedding_extras").select("name").eq("wedding_id", id).order("created_at"),
-    supabase.from("wedding_locations").select("label, venue_name, city").eq("wedding_id", id).order("created_at"),
-    supabase.from("wedding_days").select("day_date, start_time, label").eq("wedding_id", id).order("day_date"),
+    supabase.from("wedding_locations").select("label, venue_name, city, created_at").eq("wedding_id", id).order("created_at"),
+    supabase.from("wedding_days").select("day_date, start_time, label, created_at").eq("wedding_id", id).order("day_date"),
     supabase.from("payments").select("label, amount_millimes, due_date").eq("wedding_id", id).order("due_date", { nullsFirst: false }),
     supabase.from("contracts").select("fields, updated_at").eq("wedding_id", id).maybeSingle(),
   ]);
@@ -49,16 +49,12 @@ export default async function WeddingContractPage({
   const client = one(wedding.clients);
   const pack = one(wedding.packages);
   const place = [wedding.venue_name, wedding.city, wedding.governorate].filter(Boolean).join(", ");
-  const otherPlaces = (places.data ?? [])
-    .map((spot) => [spot.label, spot.venue_name, spot.city].filter(Boolean).join(", "))
-    .filter(Boolean);
-  const scheduleRows: ScheduleRow[] = [{ date: frenchLongDate(wedding.wedding_date), place }];
-  for (const day of days.data ?? []) {
-    if (day.day_date === wedding.wedding_date) continue;
-    const label = [day.label, day.start_time ? day.start_time.slice(0, 5) : ""].filter(Boolean).join(" · ");
-    scheduleRows.push({ date: [frenchLongDate(day.day_date), label].filter(Boolean).join(" — "), place: "" });
-  }
-  for (const spot of otherPlaces) scheduleRows.push({ date: "", place: spot });
+  const scheduleRows = buildWeddingSchedule({
+    mainDate: wedding.wedding_date,
+    mainPlace: place,
+    days: days.data ?? [],
+    places: places.data ?? [],
+  });
   const packs = packFields();
   const chosen = guessPack(pack?.name);
   const features = (Array.isArray(wedding.features) && wedding.features.length > 0 ? wedding.features : pack?.features) as unknown;
@@ -91,7 +87,11 @@ export default async function WeddingContractPage({
     signed_month: "",
     signed_year: wedding.wedding_date?.slice(0, 4) || "2027",
   };
-  const fields = saved.data ? readContractBlanks(saved.data.fields, defaults) : defaults;
+  const savedFields = saved.data ? readContractBlanks(saved.data.fields, defaults) : defaults;
+  const fresh = saved.data
+    ? freshScheduleRows(saved.data.updated_at, days.data ?? [], places.data ?? [], wedding.wedding_date)
+    : [];
+  const fields = applyFreshSchedule(savedFields, fresh);
 
   return (
     <div>
@@ -115,15 +115,7 @@ export default async function WeddingContractPage({
           Pour un PDF sans adresse du site, désactivez « En-têtes et pieds de page » dans les options d’impression si votre navigateur les ajoute.
         </p>
       </div>
-      <YesserContract key={`${saved.data?.updated_at ?? "default"}:${notice ?? ""}`} weddingId={id} initial={fields} saveAction={saveContract} />
+      <YesserContract key={`${saved.data?.updated_at ?? "default"}:${notice ?? ""}:${fields.schedule}`} weddingId={id} initial={fields} saveAction={saveContract} />
     </div>
-  );
-}
-
-function frenchLongDate(value: string) {
-  const [year, month, day] = value.slice(0, 10).split("-").map(Number);
-  if (!year || !month || !day) return "";
-  return new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(
-    new Date(Date.UTC(year, month - 1, day)),
   );
 }

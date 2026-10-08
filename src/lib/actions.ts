@@ -29,6 +29,7 @@ import {
   offerSchema,
   packageSchema,
   paymentSchema,
+  parseWeddingExtras,
   contractSchema,
   invoiceSchema,
   quickBookSchema,
@@ -115,20 +116,117 @@ async function dateTaken(supabase: Supabase, date: string, excludeId?: string) {
     .eq("wedding_date", date)
     .neq("status", "cancelled");
   if (excludeId) main = main.neq("id", excludeId);
-  const { count } = await main;
+  const { count, error } = await main;
+  if (error) {
+    console.error("Date check failed:", error.code);
+    return null;
+  }
   if ((count ?? 0) > 0) return true;
 
   let extra = supabase.from("wedding_days").select("wedding_id").eq("day_date", date);
   if (excludeId) extra = extra.neq("wedding_id", excludeId);
-  const { data } = await extra;
+  const { data, error: extraError } = await extra;
+  if (extraError) {
+    console.error("Date check failed:", extraError.code);
+    return null;
+  }
   const ids = [...new Set((data ?? []).map((row) => row.wedding_id))];
   if (ids.length === 0) return false;
-  const { count: extraCount } = await supabase
+  const { count: extraCount, error: statusError } = await supabase
     .from("weddings")
     .select("id", { count: "exact", head: true })
     .in("id", ids)
     .neq("status", "cancelled");
+  if (statusError) {
+    console.error("Date check failed:", statusError.code);
+    return null;
+  }
   return (extraCount ?? 0) > 0;
+}
+
+async function ensureDatesFree(
+  supabase: Supabase,
+  back: string,
+  dates: string[],
+  allowDouble: boolean,
+  cancelled: boolean,
+  excludeId: string | undefined,
+  failure: string,
+) {
+  if (allowDouble || cancelled) return;
+  for (const date of dates) {
+    const taken = await dateTaken(supabase, date, excludeId);
+    if (taken === null) fail(back, failure);
+    if (taken) fail(back, doubleBookingMessage(date));
+  }
+}
+
+async function saveExtraSchedule(
+  supabase: Supabase,
+  weddingId: string,
+  days: { day_date: string; start_time: string; label: string }[],
+  places: { label: string; venue_name: string; city: string; location_url: string }[],
+) {
+  if (days.length > 0) {
+    const { error } = await supabase.from("wedding_days").insert(
+      days.map((day) => ({
+        wedding_id: weddingId,
+        day_date: day.day_date,
+        start_time: emptyToNull(day.start_time),
+        label: day.label,
+      })),
+    );
+    if (error?.code === "23505") return "day_exists";
+    if (error) {
+      console.error("Extra days failed:", error.code);
+      return "add_day_failed";
+    }
+  }
+  if (places.length > 0) {
+    const { error } = await supabase.from("wedding_locations").insert(
+      places.map((place) => ({
+        wedding_id: weddingId,
+        label: place.label,
+        venue_name: place.venue_name,
+        city: place.city,
+        location_url: place.location_url,
+      })),
+    );
+    if (error) {
+      console.error("Extra places failed:", error.code);
+      return "add_place_failed";
+    }
+  }
+  return null;
+}
+
+async function deleteWeddingRow(supabase: Supabase, weddingId: string) {
+  const { error } = await supabase.from("weddings").delete().eq("id", weddingId);
+  if (error) console.error("Wedding rollback failed:", error.code);
+  return !error;
+}
+
+async function undoBookedLead(supabase: Supabase, leadId: string, weddingId: string, previousStatus: string) {
+  const { data: wedding, error: lookupError } = await supabase.from("weddings").select("client_id").eq("id", weddingId).maybeSingle();
+  if (lookupError || !wedding?.client_id) return false;
+  if (!(await deleteWeddingRow(supabase, weddingId))) return false;
+  const { error: clientError } = await supabase.from("clients").delete().eq("id", wedding.client_id);
+  if (clientError) console.error("Lead booking rollback failed:", clientError.code);
+  const { error: leadError } = await supabase
+    .from("leads")
+    .update({ status: previousStatus, converted_client_id: null })
+    .eq("id", leadId);
+  if (leadError) console.error("Lead booking rollback failed:", leadError.code);
+  return !clientError && !leadError;
+}
+
+async function undoQuickBook(supabase: Supabase, weddingId: string) {
+  const { data: wedding, error: lookupError } = await supabase.from("weddings").select("client_id").eq("id", weddingId).maybeSingle();
+  if (lookupError || !wedding?.client_id) return false;
+  if (!(await deleteWeddingRow(supabase, weddingId))) return false;
+  const { error: clientError } = await supabase.from("clients").delete().eq("id", wedding.client_id);
+  if (clientError) console.error("Quick booking rollback failed:", clientError.code);
+  return !clientError;
 }
 
 function doubleBookingMessage(date: string) {
@@ -192,6 +290,7 @@ export async function saveLead(formData: FormData) {
   const back = id ? `/leads/${id}` : "/clients?tab=leads";
   const parsed = parseForm(leadSchema, formData);
   if ("error" in parsed) fail(back, parsed.error);
+  if (id && !UUID.test(id)) fail("/clients?tab=leads", "save_lead_failed");
   const supabase = await createClient();
   const row = {
     partner_one_name: parsed.data.partner_one_name,
@@ -216,25 +315,55 @@ export async function saveLead(formData: FormData) {
   done(back, id ? "lead_saved" : "lead_added");
 }
 
+export async function deleteLead(formData: FormData) {
+  await requireManager();
+  const id = String(formData.get("id") ?? "");
+  if (!UUID.test(id)) fail("/clients?tab=leads", "delete_lead_failed");
+  const supabase = await createClient();
+  const { data: lead, error: lookupError } = await supabase.from("leads").select("id").eq("id", id).maybeSingle();
+  if (lookupError) {
+    console.error("Delete lead failed:", lookupError.code);
+    fail(`/leads/${id}`, "delete_lead_failed");
+  }
+  if (!lead) fail("/clients?tab=leads", "lead_missing");
+  const { error } = await supabase.from("leads").delete().eq("id", id);
+  if (error) {
+    console.error("Delete lead failed:", error.code);
+    fail(`/leads/${id}`, "delete_lead_failed");
+  }
+  revalidatePath("/clients");
+  revalidatePath(`/leads/${id}`);
+  done("/clients?tab=leads", "lead_deleted");
+}
+
 export async function convertLead(formData: FormData) {
   await requireManager();
   const leadId = String(formData.get("lead_id") ?? "");
   const back = `/leads/${leadId}`;
   const parsed = parseForm(convertSchema, formData);
   if ("error" in parsed) fail(back, parsed.error);
+  if (!UUID.test(leadId)) fail("/clients?tab=leads", "lead_missing");
+  const extras = parseWeddingExtras(formData, parsed.data.wedding_date);
+  if ("error" in extras) fail(back, extras.error);
   const supabase = await createClient();
   const { data: lead } = await supabase
     .from("leads")
-    .select("id, converted_client_id")
+    .select("id, converted_client_id, status")
     .eq("id", leadId)
     .maybeSingle();
   if (!lead) fail("/clients?tab=leads", "lead_missing");
   if (lead.converted_client_id) fail(back, "lead_already_booked");
 
   const allowDouble = formData.get("allow_double") === "on";
-  if (!allowDouble && parsed.data.status !== "cancelled" && (await dateTaken(supabase, parsed.data.wedding_date))) {
-    fail(back, doubleBookingMessage(parsed.data.wedding_date));
-  }
+  await ensureDatesFree(
+    supabase,
+    back,
+    [parsed.data.wedding_date, ...extras.days.map((day) => day.day_date)],
+    allowDouble,
+    parsed.data.status === "cancelled",
+    undefined,
+    "book_lead_failed",
+  );
 
   const { data: weddingId, error } = await supabase.rpc("book_lead", {
     p_lead_id: leadId,
@@ -254,6 +383,14 @@ export async function convertLead(formData: FormData) {
   if (packageId) {
     const { data: pack } = await supabase.from("packages").select("features").eq("id", packageId).maybeSingle();
     if (pack) await supabase.from("weddings").update({ features: asFeatures(pack.features) }).eq("id", weddingId);
+  }
+
+  if (extras.days.length > 0 || extras.places.length > 0) {
+    const scheduleError = await saveExtraSchedule(supabase, weddingId, extras.days, extras.places);
+    if (scheduleError) {
+      const undone = await undoBookedLead(supabase, leadId, weddingId, lead.status);
+      fail(undone ? back : `/weddings/${weddingId}`, scheduleError);
+    }
   }
 
   revalidatePath("/clients");
@@ -544,9 +681,7 @@ export async function addWeddingDay(formData: FormData) {
   if (weddingError || !wedding) fail(back, "add_day_failed");
   if (wedding.wedding_date === parsed.data.day_date) fail(back, "day_is_main");
   const allowDouble = formData.get("allow_double") === "on";
-  if (!allowDouble && wedding.status !== "cancelled" && (await dateTaken(supabase, parsed.data.day_date, wedding.id))) {
-    fail(back, doubleBookingMessage(parsed.data.day_date));
-  }
+  await ensureDatesFree(supabase, back, [parsed.data.day_date], allowDouble, wedding.status === "cancelled", wedding.id, "add_day_failed");
   const { error } = await supabase.from("wedding_days").insert({
     wedding_id: wedding.id,
     day_date: parsed.data.day_date,
@@ -675,6 +810,10 @@ export async function saveWedding(formData: FormData) {
   const back = id ? `/weddings/${id}` : "/weddings";
   const parsed = parseForm(weddingSchema, formData);
   if ("error" in parsed) fail(back, parsed.error);
+  if (id && !UUID.test(id)) fail("/weddings", "save_wedding_failed");
+  const creating = !id;
+  const schedule = creating ? parseWeddingExtras(formData, parsed.data.wedding_date) : { days: [], places: [] };
+  if ("error" in schedule) fail(back, schedule.error);
   const supabase = await createClient();
   const data = parsed.data;
 
@@ -683,12 +822,16 @@ export async function saveWedding(formData: FormData) {
     : { data: null };
 
   const allowDouble = formData.get("allow_double") === "on";
-  if (!allowDouble && data.status !== "cancelled") {
-    const dateChanged = !current || current.wedding_date !== data.wedding_date || current.status === "cancelled";
-    if (dateChanged && (await dateTaken(supabase, data.wedding_date, id || undefined))) {
-      fail(back, doubleBookingMessage(data.wedding_date));
-    }
-  }
+  const checkMain = !current || current.wedding_date !== data.wedding_date || current.status === "cancelled";
+  await ensureDatesFree(
+    supabase,
+    back,
+    [...(checkMain ? [data.wedding_date] : []), ...schedule.days.map((day) => day.day_date)],
+    allowDouble,
+    data.status === "cancelled",
+    id || undefined,
+    creating ? "wedding_unsaved" : "save_wedding_failed",
+  );
 
   const nextPackageId = emptyToNull(data.package_id);
   let packagePrice: number | null = current?.package_price_millimes ?? null;
@@ -772,6 +915,14 @@ export async function saveWedding(formData: FormData) {
   if (Object.keys(patch).length > 0) {
     const { error: linkError } = await supabase.from("weddings").update(patch).eq("id", weddingId);
     if (linkError) fail(`/weddings/${weddingId}`, "save_wedding_failed");
+  }
+  if (schedule.days.length > 0 || schedule.places.length > 0) {
+    const scheduleError = await saveExtraSchedule(supabase, weddingId, schedule.days, schedule.places);
+    if (scheduleError) {
+      const removed = await deleteWeddingRow(supabase, weddingId);
+      if (!removed) fail(`/weddings/${weddingId}`, scheduleError);
+      fail(back, scheduleError);
+    }
   }
   revalidatePath("/weddings");
   revalidatePath("/payments");
@@ -1204,10 +1355,18 @@ export async function quickBook(formData: FormData) {
   const back = `/calendar?month=${date.slice(0, 7)}&add=${date}`;
   const parsed = parseForm(quickBookSchema, formData);
   if ("error" in parsed) fail(back, parsed.error);
+  const extras = parseWeddingExtras(formData, parsed.data.wedding_date);
+  if ("error" in extras) fail(back, extras.error);
   const supabase = await createClient();
-  if (formData.get("allow_double") !== "on" && (await dateTaken(supabase, parsed.data.wedding_date))) {
-    fail(back, doubleBookingMessage(parsed.data.wedding_date));
-  }
+  await ensureDatesFree(
+    supabase,
+    back,
+    [parsed.data.wedding_date, ...extras.days.map((day) => day.day_date)],
+    formData.get("allow_double") === "on",
+    false,
+    undefined,
+    "book_wedding_failed",
+  );
   const { data: weddingId, error } = await supabase.rpc("quick_book", {
     p_partner_one_name: parsed.data.partner_one_name,
     p_partner_two_name: parsed.data.partner_two_name,
@@ -1218,6 +1377,14 @@ export async function quickBook(formData: FormData) {
     p_total_millimes: parsed.data.total ?? 0,
   });
   if (error || !weddingId) fail(back, "book_wedding_failed");
+  if (extras.days.length > 0 || extras.places.length > 0) {
+    const scheduleError = await saveExtraSchedule(supabase, weddingId, extras.days, extras.places);
+    if (scheduleError) {
+      const undone = await undoQuickBook(supabase, weddingId);
+      if (!undone) fail(`/weddings/${weddingId}`, scheduleError);
+      fail(back, scheduleError);
+    }
+  }
   revalidatePath("/calendar");
   revalidatePath("/weddings");
   revalidatePath("/clients");

@@ -33,6 +33,20 @@ const optionalUrl = z
   .default("")
   .refine((value) => value === "" || /^https?:\/\/\S+$/i.test(value), "err_url");
 
+const optionalTime = z
+  .string()
+  .trim()
+  .default("")
+  .transform((value, ctx) => {
+    if (!value) return "";
+    const match = /^(\d{2}:\d{2})(?::\d{2})?$/.exec(value);
+    if (!match) {
+      ctx.addIssue({ code: "custom", message: "err_form" });
+      return z.NEVER;
+    }
+    return match[1];
+  });
+
 const flag = z
   .string()
   .optional()
@@ -79,7 +93,7 @@ export const quickBookSchema = z.object({
   partner_two_name: z.string().trim().default(""),
   phone,
   whatsapp_phone: optionalPhone,
-  wedding_date: z.string().refine(isIsoDate, "err_date"),
+  wedding_date: z.string().trim().refine(isIsoDate, "err_date"),
   venue_name: z.string().trim().default(""),
   total: optionalMoney,
 });
@@ -93,7 +107,11 @@ export const leadSchema = z.object({
   source: z.enum(LEAD_SOURCES),
   city: z.string().trim().default(""),
   venue: z.string().trim().default(""),
-  wedding_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).or(z.literal("")).default(""),
+  wedding_date: z
+    .string()
+    .trim()
+    .default("")
+    .refine((value) => value === "" || isIsoDate(value), "err_date"),
   status: z.enum(LEAD_STATUSES),
   package_id: z.string().uuid().or(z.literal("")).default(""),
 });
@@ -147,9 +165,9 @@ export const weddingExtraPriceSchema = z.object({
 
 export const weddingDaySchema = z.object({
   wedding_id: z.string().uuid(),
-  day_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "err_date"),
-  start_time: z.string().regex(/^\d{2}:\d{2}$/).or(z.literal("")).default(""),
-  label: z.string().trim().max(80).default(""),
+  day_date: z.string().trim().refine(isIsoDate, "err_date"),
+  start_time: optionalTime,
+  label: z.string().trim().max(80, "err_form").default(""),
 });
 
 export const weddingPlaceSchema = z
@@ -162,6 +180,88 @@ export const weddingPlaceSchema = z
   })
   .refine((data) => data.venue_name || data.city || data.location_url, { message: "err_place" });
 
+const SCHEDULE_LIMIT = 12;
+
+const extraDayRow = z.object({
+  day_date: z.string().trim().refine(isIsoDate, "err_date"),
+  start_time: optionalTime,
+  label: z.string().trim().max(80, "err_form"),
+});
+
+const extraPlaceRow = z
+  .object({
+    label: z.string().trim().max(80, "err_form"),
+    venue_name: z.string().trim().max(120, "err_form"),
+    city: z.string().trim().max(80, "err_form"),
+    location_url: optionalUrl,
+  })
+  .refine((data) => data.venue_name || data.city || data.location_url, { message: "err_place" });
+
+export type ExtraDay = z.infer<typeof extraDayRow>;
+export type ExtraPlace = z.infer<typeof extraPlaceRow>;
+
+function formStrings(formData: FormData, name: string) {
+  return formData.getAll(name).flatMap((value) => (typeof value === "string" ? [value] : []));
+}
+
+function tooLong(values: string[], max: number) {
+  return values.some((value) => value.length > max);
+}
+
+export function parseWeddingExtras(
+  formData: FormData,
+  mainDate: string,
+): { days: ExtraDay[]; places: ExtraPlace[] } | { error: string } {
+  const dates = formStrings(formData, "extra_day_date");
+  const times = formStrings(formData, "extra_day_time");
+  const dayLabels = formStrings(formData, "extra_day_label");
+  const dayCount = Math.max(dates.length, times.length, dayLabels.length);
+  if (dayCount > SCHEDULE_LIMIT || tooLong(dates, 40) || tooLong(times, 12) || tooLong(dayLabels, 80)) {
+    return { error: "err_form" };
+  }
+
+  const days: ExtraDay[] = [];
+  const seen = new Set<string>();
+  if (isIsoDate(mainDate)) seen.add(mainDate);
+  for (let index = 0; index < dayCount; index += 1) {
+    const dayDate = (dates[index] ?? "").trim();
+    const startTime = (times[index] ?? "").trim();
+    const label = (dayLabels[index] ?? "").trim();
+    if (!dayDate && !startTime && !label) continue;
+    const parsed = extraDayRow.safeParse({ day_date: dayDate, start_time: startTime, label });
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "err_form" };
+    if (parsed.data.day_date === mainDate) return { error: "day_is_main" };
+    if (seen.has(parsed.data.day_date)) return { error: "day_exists" };
+    seen.add(parsed.data.day_date);
+    days.push(parsed.data);
+  }
+
+  const placeLabels = formStrings(formData, "extra_place_label");
+  const venues = formStrings(formData, "extra_place_venue");
+  const cities = formStrings(formData, "extra_place_city");
+  const urls = formStrings(formData, "extra_place_url");
+  const placeCount = Math.max(placeLabels.length, venues.length, cities.length, urls.length);
+  if (placeCount > SCHEDULE_LIMIT || tooLong(placeLabels, 80) || tooLong(venues, 120) || tooLong(cities, 80) || tooLong(urls, 2000)) {
+    return { error: "err_form" };
+  }
+
+  const places: ExtraPlace[] = [];
+  for (let index = 0; index < placeCount; index += 1) {
+    const row = {
+      label: placeLabels[index] ?? "",
+      venue_name: venues[index] ?? "",
+      city: cities[index] ?? "",
+      location_url: urls[index] ?? "",
+    };
+    if (!row.label.trim() && !row.venue_name.trim() && !row.city.trim() && !row.location_url.trim()) continue;
+    const parsed = extraPlaceRow.safeParse(row);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "err_form" };
+    places.push(parsed.data);
+  }
+
+  return { days, places };
+}
+
 export const weddingChildSchema = z.object({
   id: z.string().uuid(),
   wedding_id: z.string().uuid(),
@@ -173,8 +273,8 @@ export const weddingFeaturesSchema = z.object({
 
 export const convertSchema = z.object({
   package_id: z.string().uuid().or(z.literal("")).default(""),
-  wedding_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "err_date"),
-  start_time: z.string().regex(/^\d{2}:\d{2}$/).or(z.literal("")).default(""),
+  wedding_date: z.string().trim().refine(isIsoDate, "err_date"),
+  start_time: optionalTime,
   venue_name: z.string().trim().default(""),
   city: z.string().trim().default(""),
   governorate: z.enum(GOVERNORATES).or(z.literal("")).default(""),
@@ -186,8 +286,8 @@ export const convertSchema = z.object({
 export const weddingSchema = z.object({
   client_id: z.string().uuid("err_couple"),
   package_id: z.string().uuid().or(z.literal("")).default(""),
-  wedding_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "err_date"),
-  start_time: z.string().regex(/^\d{2}:\d{2}$/).or(z.literal("")).default(""),
+  wedding_date: z.string().trim().refine(isIsoDate, "err_date"),
+  start_time: optionalTime,
   venue_name: z.string().trim().default(""),
   city: z.string().trim().default(""),
   governorate: z.enum(GOVERNORATES).or(z.literal("")).default(""),

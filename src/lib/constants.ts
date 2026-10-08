@@ -69,6 +69,10 @@ export function normalizePhone(value: string): string | null {
   return number;
 }
 
+export function phoneSearchDigits(value: string | undefined) {
+  return (value ?? "").replace(/\D/g, "").slice(0, 20);
+}
+
 export function labelize(value: string): string {
   const text = value.replaceAll("_", " ");
   return text.charAt(0).toUpperCase() + text.slice(1);

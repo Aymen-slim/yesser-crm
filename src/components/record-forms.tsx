@@ -28,7 +28,7 @@ import {
   WEDDING_STATUSES,
   todayInTunis,
 } from "@/lib/constants";
-import { LineList, PhoneInput, SubmitButton } from "@/components/client";
+import { LineList, PhoneInput, SubmitButton, WeddingScheduleExtras } from "@/components/client";
 import { Field } from "@/components/ui";
 import { fill, getMessages, term, type Messages } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
@@ -84,6 +84,33 @@ async function BookAnyway() {
       <input type="checkbox" name="allow_double" />
       {f.bookAnyway}
     </label>
+  );
+}
+
+async function WeddingScheduleFields() {
+  const messages = await copy();
+  const f = messages.forms;
+  return (
+    <WeddingScheduleExtras
+      labels={{
+        extraDays: f.extraDays,
+        extraDaysHint: f.extraDaysHint,
+        addDate: f.addDate,
+        date: f.date,
+        start: f.start,
+        dayLabel: messages.weddings.dayLabel,
+        dayLabelHint: messages.weddings.dayLabelHint,
+        extraPlaces: f.extraPlaces,
+        extraPlacesHint: f.extraPlacesHint,
+        addPlace: f.addPlace,
+        placeLabel: messages.weddings.placeLabel,
+        placeLabelHint: messages.weddings.placeLabelHint,
+        venue: f.venue,
+        city: f.city,
+        locationLink: f.locationLink,
+        remove: messages.common.remove,
+      }}
+    />
   );
 }
 
@@ -171,6 +198,8 @@ export async function ConvertForm({
   const f = messages.forms;
   const chosen = packages.find((item) => item.id === defaults.package_id);
   const total = chosen ? (chosen.price_millimes / 1000).toFixed(3) : "";
+  const schedule = await WeddingScheduleFields();
+  const bookAnyway = await BookAnyway();
   return (
     <form action={convertLead} className={formGrid}>
       <input type="hidden" name="lead_id" value={leadId} />
@@ -217,9 +246,10 @@ export async function ConvertForm({
       <Field label={f.dayPlan} wide>
         <textarea name="day_plan" rows={3} />
       </Field>
+      {schedule}
       <FormActions>
         <SubmitButton pendingLabel={messages.common.booking}>{f.createCouple}</SubmitButton>
-        <BookAnyway />
+        {bookAnyway}
       </FormActions>
     </form>
   );
@@ -228,6 +258,8 @@ export async function ConvertForm({
 export async function QuickBookForm({ date }: { date: string }) {
   const messages = await copy();
   const f = messages.forms;
+  const schedule = await WeddingScheduleFields();
+  const bookAnyway = await BookAnyway();
   return (
     <form action={quickBook} className="grid gap-4 pb-1 sm:grid-cols-2 lg:grid-cols-3">
       <Field label={f.weddingDate}>
@@ -246,9 +278,10 @@ export async function QuickBookForm({ date }: { date: string }) {
       <Field label={f.agreedTotal}>
         <input name="total" inputMode="decimal" placeholder={f.optional} />
       </Field>
+      {schedule}
       <div className="flex flex-wrap items-center gap-4 sm:col-span-2 lg:col-span-3">
         <SubmitButton pendingLabel={messages.common.booking}>{f.bookWedding}</SubmitButton>
-        <BookAnyway />
+        {bookAnyway}
       </div>
     </form>
   );
@@ -401,6 +434,7 @@ export async function ExtraForm({
 export async function WeddingDayForm({ weddingId }: { weddingId: string }) {
   const messages = await copy();
   const f = messages.forms;
+  const bookAnyway = await BookAnyway();
   return (
     <form action={addWeddingDay} className={`${formGrid} pb-0`}>
       <input type="hidden" name="wedding_id" value={weddingId} />
@@ -415,7 +449,7 @@ export async function WeddingDayForm({ weddingId }: { weddingId: string }) {
       </Field>
       <FormActions>
         <SubmitButton pendingLabel={messages.common.saving}>{messages.weddings.addDay}</SubmitButton>
-        <BookAnyway />
+        {bookAnyway}
       </FormActions>
     </form>
   );
@@ -472,6 +506,8 @@ export async function WeddingForm({
 }) {
   const messages = await copy();
   const f = messages.forms;
+  const schedule = wedding ? null : await WeddingScheduleFields();
+  const bookAnyway = await BookAnyway();
   return (
     <form action={saveWedding} className={formGrid}>
       {wedding ? <input type="hidden" name="id" value={wedding.id} /> : null}
@@ -537,9 +573,10 @@ export async function WeddingForm({
       <Field label={f.dayPlan} wide>
         <textarea name="day_plan" rows={4} defaultValue={wedding?.day_plan} />
       </Field>
+      {schedule}
       <FormActions>
         <SubmitButton pendingLabel={messages.common.saving}>{wedding ? f.saveWedding : f.addWedding}</SubmitButton>
-        <BookAnyway />
+        {bookAnyway}
       </FormActions>
     </form>
   );

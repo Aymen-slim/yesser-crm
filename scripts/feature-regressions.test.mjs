@@ -36,8 +36,8 @@ function load(relative, overrides = {}, moduleCache = cache) {
   return loadedModule.exports;
 }
 
-const { normalizePhone, monthRange, isIsoDate, resolveDashboardPeriod, sortByWeddingDate, dashboardPeriodInRange } = load("src/lib/constants.ts");
-const { clientSchema, leadSchema, quickBookSchema, contractSchema, parseForm } = load("src/lib/validators.ts");
+const { normalizePhone, phoneSearchDigits, monthRange, isIsoDate, resolveDashboardPeriod, sortByWeddingDate, dashboardPeriodInRange } = load("src/lib/constants.ts");
+const { clientSchema, leadSchema, quickBookSchema, contractSchema, parseForm, parseWeddingExtras } = load("src/lib/validators.ts");
 const { CalendarMonth } = load("src/components/calendar.tsx");
 const { YesserContract } = load("src/components/yesser-contract.tsx");
 const { packFields } = load("src/lib/contract.ts");
@@ -136,6 +136,89 @@ test("calendar quick booking rejects impossible dates", () => {
     assert.equal(quickBookSchema.safeParse({ partner_one_name: "Test", phone: "20123456", wedding_date: date }).success, false);
   }
   assert.equal(isIsoDate("2028-02-29"), true);
+});
+
+test("phone search keeps digits and ignores other characters", () => {
+  assert.equal(phoneSearchDigits("+216 20 123 456"), "21620123456");
+  assert.equal(phoneSearchDigits("abc"), "");
+  assert.equal(phoneSearchDigits("1".repeat(40)).length, 20);
+});
+
+test("extra wedding dates and places are validated before anything is saved", () => {
+  const form = new FormData();
+  form.append("extra_day_date", "2027-06-13");
+  form.append("extra_day_time", "18:00:00");
+  form.append("extra_day_label", "Henna");
+  form.append("extra_day_date", "");
+  form.append("extra_day_time", "");
+  form.append("extra_day_label", "");
+  form.append("extra_place_label", "Shooting");
+  form.append("extra_place_venue", "Beach");
+  form.append("extra_place_city", "Hammamet");
+  form.append("extra_place_url", "https://maps.example.com/place");
+  const parsed = parseWeddingExtras(form, "2027-06-12");
+  assert.equal(parsed.days.length, 1);
+  assert.equal(parsed.days[0].start_time, "18:00");
+  assert.equal(parsed.days[0].label, "Henna");
+  assert.equal(parsed.places[0].venue_name, "Beach");
+
+  const duplicate = new FormData();
+  duplicate.append("extra_day_date", "2027-06-12");
+  duplicate.append("extra_day_time", "");
+  duplicate.append("extra_day_label", "");
+  assert.equal(parseWeddingExtras(duplicate, "2027-06-12").error, "day_is_main");
+
+  const impossible = new FormData();
+  impossible.append("extra_day_date", "2027-02-29");
+  impossible.append("extra_day_time", "");
+  impossible.append("extra_day_label", "");
+  assert.equal(parseWeddingExtras(impossible, "2027-06-12").error, "err_date");
+
+  const nameless = new FormData();
+  nameless.append("extra_place_label", "Hall");
+  nameless.append("extra_place_venue", "");
+  nameless.append("extra_place_city", "");
+  nameless.append("extra_place_url", "");
+  assert.equal(parseWeddingExtras(nameless, "2027-06-12").error, "err_place");
+  const empty = parseWeddingExtras(new FormData(), "2027-06-12");
+  assert.equal(empty.days.length, 0);
+  assert.equal(empty.places.length, 0);
+});
+
+test("new dates and places are included on a contract by default", () => {
+  const { applyFreshSchedule, buildWeddingSchedule, encodeSchedule, freshScheduleRows } = load("src/lib/contract.ts");
+  const rows = buildWeddingSchedule({
+    mainDate: "2027-06-12",
+    mainPlace: "Hall, Sousse",
+    days: [{ day_date: "2027-06-13", label: "Henna", start_time: "18:00" }],
+    places: [{ label: "Shooting", venue_name: "Beach", city: "Hammamet" }],
+  });
+  assert.equal(rows.length, 3);
+  assert.match(rows[1].date, /Henna/);
+  assert.match(rows[1].date, /18:00/);
+  assert.equal(rows[2].place, "Shooting, Beach, Hammamet");
+
+  const savedAt = "2026-10-01T00:00:00.000Z";
+  const fresh = freshScheduleRows(
+    savedAt,
+    [
+      { day_date: "2027-06-11", label: "Old", created_at: "2026-09-01T00:00:00.000Z" },
+      { day_date: "2027-06-13", label: "Henna", created_at: "2026-10-02T00:00:00.000Z" },
+    ],
+    [{ label: "Shooting", venue_name: "Beach", city: "Hammamet", created_at: "2026-10-02T00:00:00.000Z" }],
+    "2027-06-12",
+  );
+  assert.equal(fresh.length, 2);
+  assert.match(fresh[0].date, /Henna/);
+  const saved = contractSchema.parse({
+    wedding_id: "12345678-1234-4234-8234-123456789012",
+    schedule: encodeSchedule([{ date: rows[0].date, place: rows[0].place }]),
+  });
+  const next = applyFreshSchedule(saved, fresh);
+  assert.match(next.schedule, /Henna/);
+  assert.match(next.event_date, /Henna/);
+  assert.match(next.places, /Beach/);
+  assert.equal(applyFreshSchedule(next, fresh).schedule, next.schedule);
 });
 
 const calendarProps = {
@@ -309,6 +392,26 @@ test("optional contact lookup works before and after migration", async () => {
   assert.equal(after.get("client-id"), "+447911123456");
 });
 
+test("number search matches a phone or a separate WhatsApp number", async () => {
+  const { findIdsByWhatsapp, phoneMatchFilter } = load("src/lib/supabase/contacts.ts");
+  const id = "12345678-1234-4234-8234-123456789012";
+  assert.equal(phoneMatchFilter("21620123456", []), 'phone.ilike."%21620123456%"');
+  assert.equal(phoneMatchFilter("bad", []), "");
+  assert.equal(phoneMatchFilter("20123456", [id, "not-an-id"]), `phone.ilike."%20123456%",id.in.(${id})`);
+  const lookup = (error) => ({
+    from(table) {
+      assert.ok(table === "clients" || table === "leads");
+      return { select() { return { ilike: async () => ({ data: error ? null : [{ id }], error }) }; } };
+    },
+  });
+  const missing = await findIdsByWhatsapp(lookup({ code: "42703", message: "column leads.whatsapp_phone does not exist" }), "leads", "20123456");
+  assert.equal(missing.length, 0);
+  await assert.rejects(
+    findIdsByWhatsapp(lookup({ code: "42501", message: "permission denied for column whatsapp_phone" }), "clients", "20123456"),
+    { message: "couples_failed" },
+  );
+});
+
 test("optional contact lookup does not hide database permission failures", async () => {
   const { getWhatsappPhones } = load("src/lib/supabase/contacts.ts");
   await assert.rejects(getWhatsappPhones(contactLookup({ data: null, error: { code: "42501", message: "permission denied for column whatsapp_phone" } }), "clients", ["client-id"]), { message: "couple_contacts_failed" });
@@ -340,6 +443,55 @@ function couplesPageFixture(tab) {
   });
   return CouplesPage({ searchParams: Promise.resolve({ tab }) });
 }
+
+test("couple search includes a phone field and a new wedding can start with more dates", async () => {
+  const record = { id: "client-id", partner_one_name: "Test", partner_two_name: "Partner", phone: "+21620123456", email: null, city: "Test city", weddings: [{ wedding_date: "2027-06-12" }], source: "instagram", status: "new", wedding_date: "2027-06-12" };
+  const supabase = {
+    from() {
+      return {
+        columns: "", head: false,
+        select(columns, options = {}) { this.columns = columns; this.head = options.head; return this; },
+        in() { return this; }, eq() { return this; }, order() { return this; }, range() { return this; }, overrideTypes() { return this; },
+        then(resolve) {
+          if (this.columns.includes("whatsapp_phone")) return Promise.resolve({ data: null, error: { code: "42703", message: "column clients.whatsapp_phone does not exist" }, count: null }).then(resolve);
+          return Promise.resolve({ data: this.head ? null : [record], error: null, count: 1 }).then(resolve);
+        },
+      };
+    },
+  };
+  function Field({ children }) { return React.createElement("label", null, children); }
+  function Pass({ children }) { return children ?? null; }
+  const ui = new Proxy({}, { get: (_, name) => (name === "coupleName" ? (one, two) => `${one} & ${two}` : name === "Field" ? Field : Pass) });
+  const { default: CouplesPage } = load("src/app/(studio)/clients/page.tsx", {
+    "@/components/record-forms": { ClientForm() { return null; }, LeadForm() { return null; } },
+    "@/components/ui": ui,
+    "@/lib/auth": { requireManager: async () => ({ id: "admin-id", role: "admin" }) },
+    "@/lib/locale": { getLocale: async () => "en" },
+    "@/lib/supabase/server": { createClient: async () => supabase },
+  });
+  const couples = renderToStaticMarkup(await CouplesPage({ searchParams: Promise.resolve({ tab: "leads" }) }));
+  assert.match(couples, /name="phone"/);
+  assert.match(couples, /20123456/);
+  const client = load("src/components/client.tsx", { "@/lib/actions": {}, "@/lib/locale": { getLocale: async () => "en" } });
+  const { WeddingForm, ConvertForm } = load("src/components/record-forms.tsx", {
+    "@/components/client": client,
+    "@/components/ui": ui,
+    "@/lib/actions": {},
+    "@/lib/locale": { getLocale: async () => "en" },
+  });
+  const wedding = renderToStaticMarkup(await WeddingForm({ clients: [{ id: "client-id", partner_one_name: "Test", partner_two_name: "Partner" }], packages: [] }));
+  assert.match(wedding, /Add a date/);
+  assert.match(wedding, /Add a place/);
+  assert.match(wedding, /added to the contract/);
+  const editing = renderToStaticMarkup(await WeddingForm({
+    wedding: { id: "wedding-id", client_id: "client-id", package_id: null, wedding_date: "2027-06-12", start_time: null, venue_name: "", city: "", governorate: "", status: "reserved", total_millimes: 0, day_plan: "" },
+    clients: [{ id: "client-id", partner_one_name: "Test", partner_two_name: "Partner" }],
+    packages: [],
+  }));
+  assert.doesNotMatch(editing, /Add a date/);
+  const booking = renderToStaticMarkup(await ConvertForm({ leadId: "12345678-1234-4234-8234-123456789012", packages: [], defaults: {} }));
+  assert.match(booking, /Add a date/);
+});
 
 test("booked couples and leads remain visible before the WhatsApp migration", async () => {
   for (const tab of ["booked", "leads"]) {
@@ -468,7 +620,7 @@ test("direct account-management actions stay admin-only", async () => {
 test("members cannot invoke management actions directly", async () => {
   await withSupabaseEnv(async () => {
     const { actions } = actionsFixture("member");
-    for (const name of ["saveLead", "convertLead", "saveClient", "deleteClient", "savePackage", "deletePackage", "saveExtra", "deleteExtra", "saveWeddingOffer", "addWeddingExtra", "updateWeddingExtra", "removeWeddingExtra", "addWeddingDay", "removeWeddingDay", "addWeddingPlace", "removeWeddingPlace", "saveWeddingFeatures", "resetWeddingFeatures", "saveWedding", "deleteWedding", "savePayment", "deletePayment", "markPaymentPaid", "markPaymentUnpaid", "saveExpense", "deleteExpense", "saveInvoice", "saveContract", "resetContract", "assignMember", "updateAssignment", "unassignMember", "setCrewPaid", "deleteTask", "quickBook", "deleteWeddingFile"]) {
+    for (const name of ["saveLead", "convertLead", "saveClient", "deleteClient", "deleteLead", "savePackage", "deletePackage", "saveExtra", "deleteExtra", "saveWeddingOffer", "addWeddingExtra", "updateWeddingExtra", "removeWeddingExtra", "addWeddingDay", "removeWeddingDay", "addWeddingPlace", "removeWeddingPlace", "saveWeddingFeatures", "resetWeddingFeatures", "saveWedding", "deleteWedding", "savePayment", "deletePayment", "markPaymentPaid", "markPaymentUnpaid", "saveExpense", "deleteExpense", "saveInvoice", "saveContract", "resetContract", "assignMember", "updateAssignment", "unassignMember", "setCrewPaid", "deleteTask", "quickBook", "deleteWeddingFile"]) {
       await assert.rejects(actions[name](new FormData()), { message: "REDIRECT:/" }, name);
     }
   });
@@ -493,6 +645,109 @@ test("assistants can save couples and assign tasks to other members", async () =
     assert.equal(inserts[1].row.assignee_id, task.get("assignee_id"));
     await assert.rejects(actionsFixture("member", supabase).actions.saveTask(task), /notice=task_added/);
     assert.equal(inserts[2].row.assignee_id, "user-id");
+  });
+});
+
+function bookingClient({ fail } = {}) {
+  const events = [];
+  const query = (table) => {
+    const builder = {
+      select() { return builder; },
+      eq() { return builder; },
+      neq() { return builder; },
+      in() { return builder; },
+      insert: async (row) => {
+        events.push({ op: "insert", table, row });
+        return fail === table ? { error: { code: "23505" } } : { error: null };
+      },
+      update() { return { eq: async () => ({ error: null }) }; },
+      delete() {
+        events.push({ op: "delete", table });
+        return { eq: async () => ({ error: null }) };
+      },
+      maybeSingle: async () => ({ data: table === "leads" ? { id: "12345678-1234-4234-8234-123456789012", converted_client_id: null, status: "new" } : null, error: null }),
+      then(resolve) { return Promise.resolve({ data: [], count: 0, error: null }).then(resolve); },
+    };
+    return builder;
+  };
+  return {
+    events,
+    supabase: {
+      from: query,
+      rpc: async (name) => {
+        events.push({ op: "rpc", name });
+        return { data: "32345678-1234-4234-8234-123456789012", error: null };
+      },
+    },
+  };
+}
+
+function newWeddingForm() {
+  const form = new FormData();
+  form.set("client_id", "12345678-1234-4234-8234-123456789012");
+  form.set("wedding_date", "2027-06-12");
+  form.set("status", "reserved");
+  form.set("total", "0");
+  form.set("venue_name", "Hall");
+  form.set("city", "Sousse");
+  form.append("extra_day_date", "2027-06-13");
+  form.append("extra_day_time", "18:00");
+  form.append("extra_day_label", "Henna");
+  form.append("extra_place_label", "Shooting");
+  form.append("extra_place_venue", "Beach");
+  form.append("extra_place_city", "Hammamet");
+  form.append("extra_place_url", "https://maps.example.com/place");
+  return form;
+}
+
+test("a new wedding keeps extra dates and places, and rolls back if they cannot be saved", async () => {
+  await withSupabaseEnv(async () => {
+    const saved = bookingClient();
+    const { actions } = actionsFixture("assistant", saved.supabase);
+    await assert.rejects(actions.saveWedding(newWeddingForm()), /notice=wedding_added/);
+    const days = saved.events.find((event) => event.op === "insert" && event.table === "wedding_days");
+    const places = saved.events.find((event) => event.op === "insert" && event.table === "wedding_locations");
+    assert.equal(days.row[0].day_date, "2027-06-13");
+    assert.equal(days.row[0].label, "Henna");
+    assert.equal(places.row[0].venue_name, "Beach");
+    assert.equal(saved.events.some((event) => event.op === "delete"), false);
+
+    const failed = bookingClient({ fail: "wedding_days" });
+    await assert.rejects(actionsFixture("assistant", failed.supabase).actions.saveWedding(newWeddingForm()), /error=day_exists/);
+    assert.ok(failed.events.some((event) => event.op === "rpc" && event.name === "create_wedding"));
+    assert.ok(failed.events.some((event) => event.op === "delete" && event.table === "weddings"));
+
+    const invalid = bookingClient();
+    const bad = newWeddingForm();
+    bad.set("extra_day_date", "2027-02-29");
+    await assert.rejects(actionsFixture("assistant", invalid.supabase).actions.saveWedding(bad), /error=err_date/);
+    assert.equal(invalid.events.length, 0);
+  });
+});
+
+test("deleting a lead removes that lead only", async () => {
+  await withSupabaseEnv(async () => {
+    const id = "12345678-1234-4234-8234-123456789012";
+    const events = [];
+    const supabase = {
+      from(table) {
+        return {
+          select() { return { eq() { return { maybeSingle: async () => ({ data: { id }, error: null }) }; } }; },
+          delete() {
+            events.push(table);
+            return { eq: async () => ({ error: null }) };
+          },
+        };
+      },
+    };
+    const { actions } = actionsFixture("assistant", supabase);
+    const form = new FormData();
+    form.set("id", "not-a-lead");
+    await assert.rejects(actions.deleteLead(form), { message: "REDIRECT:/clients?tab=leads&error=delete_lead_failed" });
+    assert.equal(events.length, 0);
+    form.set("id", id);
+    await assert.rejects(actions.deleteLead(form), { message: "REDIRECT:/clients?tab=leads&notice=lead_deleted" });
+    assert.deepEqual(events, ["leads"]);
   });
 });
 

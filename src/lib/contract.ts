@@ -115,6 +115,102 @@ export function encodeSchedule(rows: ScheduleRow[]): string {
   return JSON.stringify(clean.length > 0 ? clean : [{ date: "", place: "" }]);
 }
 
+export function frenchLongDate(value: string) {
+  const [year, month, day] = value.slice(0, 10).split("-").map(Number);
+  if (!year || !month || !day) return "";
+  return new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(
+    new Date(Date.UTC(year, month - 1, day)),
+  );
+}
+
+export function dayScheduleText(day: { day_date: string; start_time?: string | null; label?: string | null }) {
+  const clock = day.start_time ? day.start_time.slice(0, 5) : "";
+  const label = [day.label ?? "", clock].filter(Boolean).join(" · ");
+  return [frenchLongDate(day.day_date), label].filter(Boolean).join(" — ");
+}
+
+export function placeScheduleText(spot: { label?: string | null; venue_name?: string | null; city?: string | null }) {
+  return [spot.label, spot.venue_name, spot.city].filter(Boolean).join(", ");
+}
+
+export function buildWeddingSchedule(input: {
+  mainDate: string;
+  mainPlace: string;
+  days: { day_date: string; start_time?: string | null; label?: string | null }[];
+  places: { label?: string | null; venue_name?: string | null; city?: string | null }[];
+}): ScheduleRow[] {
+  const rows: ScheduleRow[] = [{ date: frenchLongDate(input.mainDate), place: input.mainPlace }];
+  for (const day of input.days) {
+    if (day.day_date === input.mainDate) continue;
+    const date = dayScheduleText(day);
+    if (date) rows.push({ date, place: "" });
+  }
+  for (const spot of input.places) {
+    const place = placeScheduleText(spot);
+    if (place) rows.push({ date: "", place });
+  }
+  return rows;
+}
+
+function isNewerThan(createdAt: string | null | undefined, savedAt: string) {
+  const created = Date.parse(createdAt ?? "");
+  const saved = Date.parse(savedAt);
+  if (Number.isNaN(created) || Number.isNaN(saved)) return true;
+  return created > saved;
+}
+
+export function freshScheduleRows(
+  savedAt: string,
+  days: { day_date: string; start_time?: string | null; label?: string | null; created_at?: string | null }[],
+  places: { label?: string | null; venue_name?: string | null; city?: string | null; created_at?: string | null }[],
+  mainDate: string,
+): ScheduleRow[] {
+  const rows: ScheduleRow[] = [];
+  for (const day of days) {
+    if (day.day_date === mainDate || !isNewerThan(day.created_at, savedAt)) continue;
+    const date = dayScheduleText(day);
+    if (date) rows.push({ date, place: "" });
+  }
+  for (const spot of places) {
+    if (!isNewerThan(spot.created_at, savedAt)) continue;
+    const place = placeScheduleText(spot);
+    if (place) rows.push({ date: "", place });
+  }
+  return rows;
+}
+
+export function mergeScheduleRows(existing: ScheduleRow[], additions: ScheduleRow[]): ScheduleRow[] {
+  const next = existing.some((row) => row.date.trim() || row.place.trim())
+    ? existing.map((row) => ({ date: row.date, place: row.place }))
+    : [];
+  const dates = new Set(next.map((row) => row.date.trim()).filter(Boolean));
+  const places = new Set(next.map((row) => row.place.trim()).filter(Boolean));
+  for (const row of additions) {
+    const date = row.date.trim();
+    const place = row.place.trim();
+    const dateNew = Boolean(date) && !dates.has(date);
+    const placeNew = Boolean(place) && !places.has(place);
+    if (!dateNew && !placeNew) continue;
+    next.push({ date: dateNew ? date : "", place: placeNew ? place : "" });
+    if (dateNew) dates.add(date);
+    if (placeNew) places.add(place);
+  }
+  return next.length > 0 ? next : [{ date: "", place: "" }];
+}
+
+export function applyFreshSchedule(saved: ContractBlanks, fresh: ScheduleRow[]): ContractBlanks {
+  if (fresh.length === 0) return saved;
+  const rows = mergeScheduleRows(parseSchedule(saved.schedule), fresh);
+  const schedule = encodeSchedule(rows);
+  if (schedule === saved.schedule) return saved;
+  return {
+    ...saved,
+    schedule,
+    event_date: rows.map((row) => row.date.trim()).filter(Boolean).join(" · ").slice(0, 800),
+    places: rows.map((row) => row.place.trim()).filter(Boolean).join(" · ").slice(0, 2000),
+  };
+}
+
 const KEYS = [
   "client_names",
   "contact",

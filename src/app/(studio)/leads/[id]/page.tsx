@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ConfirmSubmit } from "@/components/client";
 import { ConvertForm, LeadForm, NoteForm } from "@/components/record-forms";
 import { Banner, ContactLinks, EmptyState, PageHeader, Section, StatusBadge, coupleName } from "@/components/ui";
+import { deleteLead } from "@/lib/actions";
 import { requireManager } from "@/lib/auth";
 import { formatDate } from "@/lib/constants";
 import { fill, getMessages } from "@/lib/i18n";
@@ -80,6 +82,16 @@ export default async function LeadPage({
           )}
           <Section title={messages.lead.details}>
             <LeadForm lead={lead} packages={packages.data ?? []} />
+            <form action={deleteLead} className="mt-4">
+              <input type="hidden" name="id" value={lead.id} />
+              <ConfirmSubmit
+                message={fill(messages.lead.deleteConfirm, {
+                  name: coupleName(lead.partner_one_name, lead.partner_two_name),
+                })}
+              >
+                {messages.common.delete}
+              </ConfirmSubmit>
+            </form>
           </Section>
         </div>
 
