@@ -154,11 +154,13 @@ export default async function WeddingPage({
             {formatDate(wedding.wedding_date, locale)}
             {wedding.start_time ? <span className="text-muted"> · {wedding.start_time.slice(0, 5)}</span> : null}
           </span>
-          {extraDays.length > 0 ? (
-            <span className="mt-1 block text-xs font-normal text-muted">
-              {fill(messages.weddings.otherDaysCount, { count: extraDays.length })}
+          {extraDays.map((day) => (
+            <span key={day.id} className="mt-1 block text-sm font-normal">
+              {formatDate(day.day_date, locale)}
+              {day.start_time ? <span className="text-muted"> · {day.start_time.slice(0, 5)}</span> : null}
+              {day.label ? <span className="text-muted"> · {day.label}</span> : null}
             </span>
-          ) : null}
+          ))}
         </Fact>
         <Fact label={messages.weddings.place}>
           <span className="block">{place || messages.common.notSet}</span>
@@ -167,11 +169,15 @@ export default async function WeddingPage({
               {messages.weddings.openMap}
             </a>
           ) : null}
-          {extraPlaces.length > 0 ? (
-            <span className="mt-1 block text-xs font-normal text-muted">
-              {fill(messages.weddings.otherPlacesCount, { count: extraPlaces.length })}
-            </span>
-          ) : null}
+          {extraPlaces.map((spot) => {
+            const where = [spot.label, spot.venue_name, spot.city].filter(Boolean).join(", ");
+            if (!where) return null;
+            return (
+              <span key={spot.id} className="mt-1 block text-sm font-normal">
+                {where}
+              </span>
+            );
+          })}
         </Fact>
         {manager ? (
           <Fact label={messages.weddings.balance}>

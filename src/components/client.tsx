@@ -271,6 +271,7 @@ const SCHEDULE_LIMIT = 12;
 
 export function WeddingScheduleExtras({
   labels,
+  section,
 }: {
   labels: {
     extraDays: string;
@@ -290,83 +291,117 @@ export function WeddingScheduleExtras({
     locationLink: string;
     remove: string;
   };
+  section: "days" | "places";
+}) {
+  return section === "days" ? <ExtraDates labels={labels} /> : <ExtraPlaces labels={labels} />;
+}
+
+function ExtraDates({
+  labels,
+}: {
+  labels: {
+    extraDaysHint: string;
+    addDate: string;
+    date: string;
+    start: string;
+    dayLabel: string;
+    dayLabelHint: string;
+    remove: string;
+  };
 }) {
   const [days, setDays] = useState<{ key: string }[]>([]);
-  const [places, setPlaces] = useState<{ key: string }[]>([]);
 
   return (
-    <div className="col-span-full flex flex-col gap-6">
-      <div>
-        <p className="text-sm font-medium">{labels.extraDays}</p>
-        <p className="mt-1 mb-3 text-xs text-muted">{labels.extraDaysHint}</p>
-        <div className="flex flex-col gap-3">
-          {days.map((row, index) => (
-            <div key={row.key} className="grid gap-3 rounded-2xl border border-line p-3 md:grid-cols-[1fr_9rem_1.4fr_auto] md:items-end">
-              <label className="flex flex-col gap-1.5 text-sm">
-                <span className="font-medium text-muted">{labels.date}</span>
-                <input name="extra_day_date" type="date" required aria-label={`${labels.date} ${index + 1}`} />
-              </label>
-              <label className="flex flex-col gap-1.5 text-sm">
-                <span className="font-medium text-muted">{labels.start}</span>
-                <input name="extra_day_time" type="time" aria-label={`${labels.start} ${index + 1}`} />
-              </label>
-              <label className="flex flex-col gap-1.5 text-sm">
-                <span className="font-medium text-muted">{labels.dayLabel}</span>
-                <input name="extra_day_label" maxLength={80} placeholder={labels.dayLabelHint} aria-label={`${labels.dayLabel} ${index + 1}`} />
-              </label>
-              <button type="button" className="ghost" onClick={() => setDays((current) => current.filter((item) => item.key !== row.key))}>
-                {labels.remove}
-              </button>
-            </div>
-          ))}
+    <div className="flex flex-col gap-3">
+      {days.map((row, index) => (
+        <div key={row.key} className="grid gap-3 rounded-2xl border border-line p-3">
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="font-medium text-muted">{labels.date}</span>
+            <input name="extra_day_date" type="date" required aria-label={`${labels.date} ${index + 1}`} />
+          </label>
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="font-medium text-muted">{labels.start}</span>
+            <input name="extra_day_time" type="time" aria-label={`${labels.start} ${index + 1}`} />
+          </label>
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="font-medium text-muted">{labels.dayLabel}</span>
+            <input name="extra_day_label" maxLength={80} placeholder={labels.dayLabelHint} aria-label={`${labels.dayLabel} ${index + 1}`} />
+          </label>
+          <div>
+            <button type="button" className="ghost" onClick={() => setDays((current) => current.filter((item) => item.key !== row.key))}>
+              {labels.remove}
+            </button>
+          </div>
         </div>
+      ))}
+      <div>
         <button
           type="button"
-          className="ghost mt-3"
+          className="ghost"
           disabled={days.length >= SCHEDULE_LIMIT}
           onClick={() => setDays((current) => [...current, { key: crypto.randomUUID() }])}
         >
           {labels.addDate}
         </button>
+        <p className="mt-1 text-xs text-muted">{labels.extraDaysHint}</p>
       </div>
-      <div>
-        <p className="text-sm font-medium">{labels.extraPlaces}</p>
-        <p className="mt-1 mb-3 text-xs text-muted">{labels.extraPlacesHint}</p>
-        <div className="flex flex-col gap-3">
-          {places.map((row, index) => (
-            <div key={row.key} className="grid gap-3 rounded-2xl border border-line p-3 md:grid-cols-2">
-              <label className="flex flex-col gap-1.5 text-sm">
-                <span className="font-medium text-muted">{labels.placeLabel}</span>
-                <input name="extra_place_label" maxLength={80} placeholder={labels.placeLabelHint} aria-label={`${labels.placeLabel} ${index + 1}`} />
-              </label>
-              <label className="flex flex-col gap-1.5 text-sm">
-                <span className="font-medium text-muted">{labels.venue}</span>
-                <input name="extra_place_venue" maxLength={120} aria-label={`${labels.venue} ${index + 1}`} />
-              </label>
-              <label className="flex flex-col gap-1.5 text-sm">
-                <span className="font-medium text-muted">{labels.city}</span>
-                <input name="extra_place_city" maxLength={80} aria-label={`${labels.city} ${index + 1}`} />
-              </label>
-              <label className="flex flex-col gap-1.5 text-sm">
-                <span className="font-medium text-muted">{labels.locationLink}</span>
-                <input name="extra_place_url" type="url" inputMode="url" maxLength={2000} placeholder="https://maps.google.com/..." aria-label={`${labels.locationLink} ${index + 1}`} />
-              </label>
-              <div>
-                <button type="button" className="ghost" onClick={() => setPlaces((current) => current.filter((item) => item.key !== row.key))}>
-                  {labels.remove}
-                </button>
-              </div>
-            </div>
-          ))}
+    </div>
+  );
+}
+
+function ExtraPlaces({
+  labels,
+}: {
+  labels: {
+    extraPlacesHint: string;
+    addPlace: string;
+    placeLabel: string;
+    placeLabelHint: string;
+    venue: string;
+    city: string;
+    locationLink: string;
+    remove: string;
+  };
+}) {
+  const [places, setPlaces] = useState<{ key: string }[]>([]);
+
+  return (
+    <div className="flex flex-col gap-3">
+      {places.map((row, index) => (
+        <div key={row.key} className="grid gap-3 rounded-2xl border border-line p-3">
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="font-medium text-muted">{labels.placeLabel}</span>
+            <input name="extra_place_label" maxLength={80} placeholder={labels.placeLabelHint} aria-label={`${labels.placeLabel} ${index + 1}`} />
+          </label>
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="font-medium text-muted">{labels.venue}</span>
+            <input name="extra_place_venue" maxLength={120} aria-label={`${labels.venue} ${index + 1}`} />
+          </label>
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="font-medium text-muted">{labels.city}</span>
+            <input name="extra_place_city" maxLength={80} aria-label={`${labels.city} ${index + 1}`} />
+          </label>
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="font-medium text-muted">{labels.locationLink}</span>
+            <input name="extra_place_url" type="url" inputMode="url" maxLength={2000} placeholder="https://maps.google.com/..." aria-label={`${labels.locationLink} ${index + 1}`} />
+          </label>
+          <div>
+            <button type="button" className="ghost" onClick={() => setPlaces((current) => current.filter((item) => item.key !== row.key))}>
+              {labels.remove}
+            </button>
+          </div>
         </div>
+      ))}
+      <div>
         <button
           type="button"
-          className="ghost mt-3"
+          className="ghost"
           disabled={places.length >= SCHEDULE_LIMIT}
           onClick={() => setPlaces((current) => [...current, { key: crypto.randomUUID() }])}
         >
           {labels.addPlace}
         </button>
+        <p className="mt-1 text-xs text-muted">{labels.extraPlacesHint}</p>
       </div>
     </div>
   );

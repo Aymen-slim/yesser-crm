@@ -133,23 +133,44 @@ export function placeScheduleText(spot: { label?: string | null; venue_name?: st
   return [spot.label, spot.venue_name, spot.city].filter(Boolean).join(", ");
 }
 
+export function zipScheduleColumns(dates: string[], places: string[]): ScheduleRow[] {
+  const count = Math.max(dates.length, places.length, 1);
+  return Array.from({ length: count }, (_, index) => ({
+    date: dates[index] ?? "",
+    place: places[index] ?? "",
+  }));
+}
+
+export function scheduleColumns(rows: ScheduleRow[]) {
+  const dates = rows.map((row) => row.date.trim()).filter(Boolean);
+  const places = rows.map((row) => row.place.trim()).filter(Boolean);
+  return {
+    dates: dates.length > 0 ? dates : [""],
+    places: places.length > 0 ? places : [""],
+  };
+}
+
 export function buildWeddingSchedule(input: {
   mainDate: string;
   mainPlace: string;
   days: { day_date: string; start_time?: string | null; label?: string | null }[];
   places: { label?: string | null; venue_name?: string | null; city?: string | null }[];
 }): ScheduleRow[] {
-  const rows: ScheduleRow[] = [{ date: frenchLongDate(input.mainDate), place: input.mainPlace }];
+  const dates: string[] = [];
+  const mainDate = frenchLongDate(input.mainDate);
+  if (mainDate) dates.push(mainDate);
   for (const day of input.days) {
     if (day.day_date === input.mainDate) continue;
     const date = dayScheduleText(day);
-    if (date) rows.push({ date, place: "" });
+    if (date) dates.push(date);
   }
+  const places: string[] = [];
+  if (input.mainPlace.trim()) places.push(input.mainPlace.trim());
   for (const spot of input.places) {
     const place = placeScheduleText(spot);
-    if (place) rows.push({ date: "", place });
+    if (place) places.push(place);
   }
-  return rows;
+  return zipScheduleColumns(dates, places);
 }
 
 function isNewerThan(createdAt: string | null | undefined, savedAt: string) {
@@ -180,22 +201,23 @@ export function freshScheduleRows(
 }
 
 export function mergeScheduleRows(existing: ScheduleRow[], additions: ScheduleRow[]): ScheduleRow[] {
-  const next = existing.some((row) => row.date.trim() || row.place.trim())
-    ? existing.map((row) => ({ date: row.date, place: row.place }))
-    : [];
-  const dates = new Set(next.map((row) => row.date.trim()).filter(Boolean));
-  const places = new Set(next.map((row) => row.place.trim()).filter(Boolean));
+  const dates = existing.map((row) => row.date.trim()).filter(Boolean);
+  const places = existing.map((row) => row.place.trim()).filter(Boolean);
+  const seenDates = new Set(dates);
+  const seenPlaces = new Set(places);
   for (const row of additions) {
     const date = row.date.trim();
     const place = row.place.trim();
-    const dateNew = Boolean(date) && !dates.has(date);
-    const placeNew = Boolean(place) && !places.has(place);
-    if (!dateNew && !placeNew) continue;
-    next.push({ date: dateNew ? date : "", place: placeNew ? place : "" });
-    if (dateNew) dates.add(date);
-    if (placeNew) places.add(place);
+    if (date && !seenDates.has(date)) {
+      dates.push(date);
+      seenDates.add(date);
+    }
+    if (place && !seenPlaces.has(place)) {
+      places.push(place);
+      seenPlaces.add(place);
+    }
   }
-  return next.length > 0 ? next : [{ date: "", place: "" }];
+  return zipScheduleColumns(dates, places);
 }
 
 export function applyFreshSchedule(saved: ContractBlanks, fresh: ScheduleRow[]): ContractBlanks {

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useFormStatus } from "react-dom";
-import { CONTRACT_PACKS, encodeSchedule, parseSchedule, type ContractBlanks, type ScheduleRow } from "@/lib/contract";
+import { CONTRACT_PACKS, encodeSchedule, parseSchedule, scheduleColumns, zipScheduleColumns, type ContractBlanks } from "@/lib/contract";
 
 export function YesserContract({
   weddingId,
@@ -14,9 +14,13 @@ export function YesserContract({
   saveAction: (formData: FormData) => void | Promise<void>;
 }) {
   const [fields, setFields] = useState(initial);
-  const [rows, setRows] = useState<ScheduleRow[]>(() => parseSchedule(initial.schedule));
+  const opened = scheduleColumns(parseSchedule(initial.schedule));
+  const [dates, setDates] = useState(opened.dates);
+  const [places, setPlaces] = useState(opened.places);
   const set = (key: keyof ContractBlanks) => (value: string) => setFields((current) => ({ ...current, [key]: value }));
+  const rows = zipScheduleColumns(dates, places);
   const schedule = encodeSchedule(rows);
+  const lineCount = Math.max(dates.length, places.length);
   const eventDate = rows.map((row) => row.date.trim()).filter(Boolean).join(" · ");
   const placeList = rows.map((row) => row.place.trim()).filter(Boolean).join(" · ");
 
@@ -55,6 +59,8 @@ export function YesserContract({
           white-space: pre-wrap;
           resize: none;
         }
+        .yesser-contract .schedule-line { display: flex; align-items: flex-start; gap: 4px; }
+        .yesser-contract .schedule-line input.cell { flex: 1; width: auto; min-width: 0; }
         .yesser-contract .pack-table { table-layout: fixed; }
         .yesser-contract .pack-table th:first-child { width: 28%; }
         .yesser-contract .auto-cell { position: relative; min-width: 0; }
@@ -171,53 +177,77 @@ export function YesserContract({
             <tr>
               <th>Date</th>
               <th>Lieu</th>
-              <th className="no-print w-8" />
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, index) => (
+            {Array.from({ length: lineCount }, (_, index) => (
               <tr key={index}>
                 <td>
-                  <input
-                    className="cell"
-                    value={row.date}
-                    maxLength={120}
-                    aria-label="Date"
-                    onChange={(event) =>
-                      setRows((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, date: event.target.value } : item)))
-                    }
-                  />
+                  {index < dates.length ? (
+                    <div className="schedule-line">
+                      <input
+                        className="cell"
+                        value={dates[index]}
+                        maxLength={120}
+                        aria-label={`Date ${index + 1}`}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setDates((current) => current.map((item, itemIndex) => (itemIndex === index ? value : item)));
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="no-print"
+                        disabled={dates.length === 1}
+                        aria-label={`Retirer la date ${index + 1}`}
+                        onClick={() => setDates((current) => (current.length === 1 ? [""] : current.filter((_, itemIndex) => itemIndex !== index)))}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : null}
                 </td>
                 <td>
-                  <input
-                    className="cell"
-                    value={row.place}
-                    maxLength={240}
-                    aria-label="Lieu"
-                    onChange={(event) =>
-                      setRows((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, place: event.target.value } : item)))
-                    }
-                  />
-                </td>
-                <td className="no-print">
-                  <button
-                    type="button"
-                    className="ghost"
-                    disabled={rows.length === 1}
-                    onClick={() => setRows((current) => current.filter((_, itemIndex) => itemIndex !== index))}
-                  >
-                    ×
-                  </button>
+                  {index < places.length ? (
+                    <div className="schedule-line">
+                      <input
+                        className="cell"
+                        value={places[index]}
+                        maxLength={240}
+                        aria-label={`Lieu ${index + 1}`}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setPlaces((current) => current.map((item, itemIndex) => (itemIndex === index ? value : item)));
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="no-print"
+                        disabled={places.length === 1}
+                        aria-label={`Retirer le lieu ${index + 1}`}
+                        onClick={() => setPlaces((current) => (current.length === 1 ? [""] : current.filter((_, itemIndex) => itemIndex !== index)))}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : null}
                 </td>
               </tr>
             ))}
+            <tr className="no-print">
+              <td>
+                <button type="button" onClick={() => setDates((current) => [...current, ""])}>
+                  Ajouter une date
+                </button>
+              </td>
+              <td>
+                <button type="button" onClick={() => setPlaces((current) => [...current, ""])}>
+                  Ajouter un lieu
+                </button>
+              </td>
+            </tr>
           </tbody>
         </table>
-        <p className="no-print">
-          <button type="button" className="ghost" onClick={() => setRows((current) => [...current, { date: "", place: "" }])}>
-            Ajouter une date et un lieu
-          </button>
-        </p>
         <p>
           Heure de début : <Blank name="start_time" value={fields.start_time} onChange={set("start_time")} size={10} maxLength={20} /> Heure de fin :{" "}
           <Blank name="end_time" value={fields.end_time} onChange={set("end_time")} size={10} maxLength={20} />

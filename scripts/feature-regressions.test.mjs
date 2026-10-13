@@ -186,17 +186,25 @@ test("extra wedding dates and places are validated before anything is saved", ()
 });
 
 test("new dates and places are included on a contract by default", () => {
-  const { applyFreshSchedule, buildWeddingSchedule, encodeSchedule, freshScheduleRows } = load("src/lib/contract.ts");
+  const { applyFreshSchedule, buildWeddingSchedule, encodeSchedule, freshScheduleRows, mergeScheduleRows } = load("src/lib/contract.ts");
   const rows = buildWeddingSchedule({
     mainDate: "2027-06-12",
     mainPlace: "Hall, Sousse",
     days: [{ day_date: "2027-06-13", label: "Henna", start_time: "18:00" }],
     places: [{ label: "Shooting", venue_name: "Beach", city: "Hammamet" }],
   });
-  assert.equal(rows.length, 3);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].place, "Hall, Sousse");
   assert.match(rows[1].date, /Henna/);
   assert.match(rows[1].date, /18:00/);
-  assert.equal(rows[2].place, "Shooting, Beach, Hammamet");
+  assert.equal(rows[1].place, "Shooting, Beach, Hammamet");
+  const stacked = mergeScheduleRows(
+    [{ date: rows[0].date, place: rows[0].place }],
+    [{ date: rows[1].date, place: "" }, { date: "", place: "Shooting, Beach, Hammamet" }],
+  );
+  assert.equal(stacked.length, 2);
+  assert.match(stacked[1].date, /Henna/);
+  assert.equal(stacked[1].place, "Shooting, Beach, Hammamet");
 
   const savedAt = "2026-10-01T00:00:00.000Z";
   const fresh = freshScheduleRows(
@@ -215,7 +223,10 @@ test("new dates and places are included on a contract by default", () => {
     schedule: encodeSchedule([{ date: rows[0].date, place: rows[0].place }]),
   });
   const next = applyFreshSchedule(saved, fresh);
-  assert.match(next.schedule, /Henna/);
+  const added = JSON.parse(next.schedule);
+  assert.equal(added.length, 2);
+  assert.match(added[1].date, /Henna/);
+  assert.match(added[1].place, /Beach/);
   assert.match(next.event_date, /Henna/);
   assert.match(next.places, /Beach/);
   assert.equal(applyFreshSchedule(next, fresh).schedule, next.schedule);
@@ -254,6 +265,9 @@ test("contract package fields mirror complete text for auto-sizing and printing"
   const initial = { ...contractSchema.parse({ wedding_id: "12345678-1234-4234-8234-123456789012" }), ...packFields(), pack1_lines: `${longText}\n<script>not executable</script>` };
   const html = renderToStaticMarkup(React.createElement(YesserContract, { weddingId: initial.wedding_id, initial, saveAction: () => {} }));
   assert.equal((html.match(/class="auto-cell"/g) ?? []).length, 9);
+  assert.ok(html.includes("Ajouter une date"));
+  assert.ok(html.includes("Ajouter un lieu"));
+  assert.ok(!html.includes("Ajouter une date et un lieu"));
   assert.ok(html.includes("Prestation 12"));
   assert.ok(html.includes("&lt;script&gt;not executable&lt;/script&gt;"));
   assert.ok(html.includes(".cell-size { visibility: visible; }"));
@@ -483,6 +497,14 @@ test("couple search includes a phone field and a new wedding can start with more
   assert.match(wedding, /Add a date/);
   assert.match(wedding, /Add a place/);
   assert.match(wedding, /added to the contract/);
+  const dateAt = wedding.indexOf('name="wedding_date"');
+  const addDateAt = wedding.indexOf("Add a date");
+  const startAt = wedding.indexOf('name="start_time"');
+  const venueAt = wedding.indexOf('name="venue_name"');
+  const addPlaceAt = wedding.indexOf("Add a place");
+  const cityAt = wedding.indexOf('name="city"');
+  assert.ok(dateAt < addDateAt && addDateAt < startAt);
+  assert.ok(venueAt < addPlaceAt && addPlaceAt < cityAt);
   const editing = renderToStaticMarkup(await WeddingForm({
     wedding: { id: "wedding-id", client_id: "client-id", package_id: null, wedding_date: "2027-06-12", start_time: null, venue_name: "", city: "", governorate: "", status: "reserved", total_millimes: 0, day_plan: "" },
     clients: [{ id: "client-id", partner_one_name: "Test", partner_two_name: "Partner" }],

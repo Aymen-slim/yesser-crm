@@ -90,28 +90,28 @@ async function BookAnyway() {
 async function WeddingScheduleFields() {
   const messages = await copy();
   const f = messages.forms;
-  return (
-    <WeddingScheduleExtras
-      labels={{
-        extraDays: f.extraDays,
-        extraDaysHint: f.extraDaysHint,
-        addDate: f.addDate,
-        date: f.date,
-        start: f.start,
-        dayLabel: messages.weddings.dayLabel,
-        dayLabelHint: messages.weddings.dayLabelHint,
-        extraPlaces: f.extraPlaces,
-        extraPlacesHint: f.extraPlacesHint,
-        addPlace: f.addPlace,
-        placeLabel: messages.weddings.placeLabel,
-        placeLabelHint: messages.weddings.placeLabelHint,
-        venue: f.venue,
-        city: f.city,
-        locationLink: f.locationLink,
-        remove: messages.common.remove,
-      }}
-    />
-  );
+  const labels = {
+    extraDays: f.extraDays,
+    extraDaysHint: f.extraDaysHint,
+    addDate: f.addDate,
+    date: f.date,
+    start: f.start,
+    dayLabel: messages.weddings.dayLabel,
+    dayLabelHint: messages.weddings.dayLabelHint,
+    extraPlaces: f.extraPlaces,
+    extraPlacesHint: f.extraPlacesHint,
+    addPlace: f.addPlace,
+    placeLabel: messages.weddings.placeLabel,
+    placeLabelHint: messages.weddings.placeLabelHint,
+    venue: f.venue,
+    city: f.city,
+    locationLink: f.locationLink,
+    remove: messages.common.remove,
+  };
+  return {
+    days: <WeddingScheduleExtras section="days" labels={labels} />,
+    places: <WeddingScheduleExtras section="places" labels={labels} />,
+  };
 }
 
 export async function LeadForm({
@@ -203,15 +203,21 @@ export async function ConvertForm({
   return (
     <form action={convertLead} className={formGrid}>
       <input type="hidden" name="lead_id" value={leadId} />
-      <Field label={f.weddingDate}>
-        <input name="wedding_date" type="date" defaultValue={defaults.wedding_date ?? ""} required />
-      </Field>
+      <div className="flex flex-col gap-3">
+        <Field label={f.weddingDate}>
+          <input name="wedding_date" type="date" defaultValue={defaults.wedding_date ?? ""} required />
+        </Field>
+        {schedule.days}
+      </div>
       <Field label={f.startTime}>
         <input name="start_time" type="time" />
       </Field>
-      <Field label={f.venue}>
-        <input name="venue_name" defaultValue={defaults.venue} />
-      </Field>
+      <div className="flex flex-col gap-3">
+        <Field label={f.venue}>
+          <input name="venue_name" defaultValue={defaults.venue} />
+        </Field>
+        {schedule.places}
+      </div>
       <Field label={f.city}>
         <input name="city" defaultValue={defaults.city} />
       </Field>
@@ -246,7 +252,6 @@ export async function ConvertForm({
       <Field label={f.dayPlan} wide>
         <textarea name="day_plan" rows={3} />
       </Field>
-      {schedule}
       <FormActions>
         <SubmitButton pendingLabel={messages.common.booking}>{f.createCouple}</SubmitButton>
         {bookAnyway}
@@ -262,9 +267,12 @@ export async function QuickBookForm({ date }: { date: string }) {
   const bookAnyway = await BookAnyway();
   return (
     <form action={quickBook} className="grid gap-4 pb-1 sm:grid-cols-2 lg:grid-cols-3">
-      <Field label={f.weddingDate}>
-        <input name="wedding_date" type="date" defaultValue={date} required />
-      </Field>
+      <div className="flex flex-col gap-3">
+        <Field label={f.weddingDate}>
+          <input name="wedding_date" type="date" defaultValue={date} required />
+        </Field>
+        {schedule.days}
+      </div>
       <Field label={f.partnerOne}>
         <input name="partner_one_name" required />
       </Field>
@@ -272,13 +280,15 @@ export async function QuickBookForm({ date }: { date: string }) {
         <input name="partner_two_name" />
       </Field>
       <CouplePhoneFields messages={messages} />
-      <Field label={f.venue}>
-        <input name="venue_name" />
-      </Field>
+      <div className="flex flex-col gap-3">
+        <Field label={f.venue}>
+          <input name="venue_name" />
+        </Field>
+        {schedule.places}
+      </div>
       <Field label={f.agreedTotal}>
         <input name="total" inputMode="decimal" placeholder={f.optional} />
       </Field>
-      {schedule}
       <div className="flex flex-wrap items-center gap-4 sm:col-span-2 lg:col-span-3">
         <SubmitButton pendingLabel={messages.common.booking}>{f.bookWedding}</SubmitButton>
         {bookAnyway}
@@ -532,15 +542,21 @@ export async function WeddingForm({
           ))}
         </select>
       </Field>
-      <Field label={f.date}>
-        <input name="wedding_date" type="date" defaultValue={wedding?.wedding_date} required />
-      </Field>
+      <div className="flex flex-col gap-3">
+        <Field label={f.date}>
+          <input name="wedding_date" type="date" defaultValue={wedding?.wedding_date} required />
+        </Field>
+        {schedule?.days}
+      </div>
       <Field label={f.start}>
         <input name="start_time" type="time" defaultValue={wedding?.start_time?.slice(0, 5) ?? ""} />
       </Field>
-      <Field label={f.venue}>
-        <input name="venue_name" defaultValue={wedding?.venue_name} />
-      </Field>
+      <div className="flex flex-col gap-3">
+        <Field label={f.venue}>
+          <input name="venue_name" defaultValue={wedding?.venue_name} />
+        </Field>
+        {schedule?.places}
+      </div>
       <Field label={f.city}>
         <input name="city" defaultValue={wedding?.city} />
       </Field>
@@ -573,7 +589,6 @@ export async function WeddingForm({
       <Field label={f.dayPlan} wide>
         <textarea name="day_plan" rows={4} defaultValue={wedding?.day_plan} />
       </Field>
-      {schedule}
       <FormActions>
         <SubmitButton pendingLabel={messages.common.saving}>{wedding ? f.saveWedding : f.addWedding}</SubmitButton>
         {bookAnyway}
