@@ -637,14 +637,22 @@ test("assistants can save couples and assign tasks to other members", async () =
     await assert.rejects(actions.saveClient(couple), { message: "REDIRECT:/clients?tab=booked&notice=couple_added" });
     assert.equal(inserts[0].table, "clients");
     assert.equal(inserts[0].row.phone, "+21620123456");
+    const lead = new FormData();
+    lead.set("partner_one_name", "Lead");
+    lead.set("phone", "20123456");
+    lead.set("source", "instagram");
+    lead.set("status", "new");
+    await assert.rejects(actions.saveLead(lead), { message: "REDIRECT:/clients?tab=leads&notice=lead_added" });
+    assert.equal(inserts[1].table, "leads");
+    assert.equal(inserts[1].row.created_by, "user-id");
     const task = new FormData();
     task.set("wedding_id", "12345678-1234-4234-8234-123456789012");
     task.set("assignee_id", "22345678-1234-4234-8234-123456789012");
     task.set("title", "Edit");
     await assert.rejects(actions.saveTask(task), /notice=task_added/);
-    assert.equal(inserts[1].row.assignee_id, task.get("assignee_id"));
+    assert.equal(inserts[2].row.assignee_id, task.get("assignee_id"));
     await assert.rejects(actionsFixture("member", supabase).actions.saveTask(task), /notice=task_added/);
-    assert.equal(inserts[2].row.assignee_id, "user-id");
+    assert.equal(inserts[3].row.assignee_id, "user-id");
   });
 });
 
@@ -788,6 +796,24 @@ test("assistant team pages never load login credentials or expose account contro
   const page = await TeamMemberPage({ params: Promise.resolve({ id: member.id }), searchParams: Promise.resolve({}) });
   assert.ok(findElement(page, (node) => node.type === "fieldset" && node.props.disabled));
   assert.ok(!findElement(page, (node) => node.props?.title === getMessages("en").team.account));
+});
+
+test("assistant booking migration keeps lead and couple writes open and wedding inserts admin-only", () => {
+  const sql = readFileSync(resolve(root, "supabase/migrations/20261013201000_assistant_crm_admin_booking.sql"), "utf8");
+  assert.match(sql, /role::text in \('admin', 'assistant'\) and active/);
+  assert.match(sql, /'clients', 'leads'/);
+  assert.match(sql, /drop policy if exists crm_manager_all on public\.weddings/);
+  assert.equal((sql.match(/if not public\.is_admin\(\) then/g) ?? []).length, 4);
+  assert.equal((sql.match(/Only the studio admin can book weddings\./g) ?? []).length, 4);
+  assert.ok(!sql.includes("if not public.can_manage_crm()"));
+});
+
+test("assistants can book weddings in the database", () => {
+  const sql = readFileSync(resolve(root, "supabase/migrations/20261013221000_assistant_can_book.sql"), "utf8");
+  assert.equal((sql.match(/if not public\.can_manage_crm\(\) then/g) ?? []).length, 4);
+  assert.match(sql, /create policy weddings_manager_insert on public\.weddings/);
+  assert.match(sql, /with check \(public\.can_manage_crm\(\)\)/);
+  assert.ok(!sql.includes("if not public.is_admin()"));
 });
 
 test("assistant migration covers CRM tables without granting profile or admin privileges", () => {
