@@ -74,7 +74,7 @@ export default async function DashboardPage({
     .limit(8);
   if (!admin) openTasks = openTasks.eq("assignee_id", profile.id);
 
-  const [weddings, extraDays, tasks, leads, overdue, paid, expenses, unpaid, monthWeddings, crewPaid, crew, team] = await Promise.all([
+  const [weddings, extraDays, tasks, leads, inquiries, overdue, paid, expenses, unpaid, monthWeddings, crewPaid, crew, team] = await Promise.all([
     supabase
       .from("weddings")
       .select("id, wedding_date, venue_name, city, status, clients(partner_one_name, partner_two_name)")
@@ -91,6 +91,9 @@ export default async function DashboardPage({
     openTasks,
     admin
       ? supabase.from("leads").select("id", { count: "exact", head: true }).in("status", ["new", "contacted", "quote_sent"])
+      : skip,
+    admin
+      ? supabase.from("inquiries").select("id", { count: "exact", head: true }).eq("status", "new")
       : skip,
     admin
       ? supabase.from("payments").select("id", { count: "exact", head: true }).is("paid_at", null).lt("due_date", today)
@@ -117,6 +120,10 @@ export default async function DashboardPage({
     admin ? crewJobs(supabase, { start: rangeStart, end: periodEnd }, undefined, messages.common.wedding) : Promise.resolve(new Map<string, CrewJob[]>()),
     admin ? supabase.from("profiles").select("id, full_name, job") : skip,
   ]);
+  if (admin && "error" in inquiries && inquiries.error) {
+    console.error("Inquiries count failed:", inquiries.error.code);
+    throw new Error("inquiries_failed");
+  }
 
   const upcoming: {
     key: string;
@@ -344,6 +351,7 @@ export default async function DashboardPage({
               href="/payments"
             />
             <StatCard label={messages.dash.openLeads} value={leads.count ?? 0} href="/clients?tab=leads" />
+            <StatCard label={messages.dash.newInquiries} value={inquiries.count ?? 0} href="/inquiries" />
           </>
         ) : null}
         <StatCard label={weddingsLabel} value={monthWeddings.count ?? 0} href={`/calendar?month=${calendarMonth}`} />

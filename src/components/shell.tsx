@@ -8,6 +8,7 @@ import Link from "next/link";
 const linkKeys = [
   { href: "/", key: "dashboard" as const },
   { href: "/clients", key: "couples" as const, admin: true },
+  { href: "/inquiries", key: "inquiries" as const, admin: true },
   { href: "/weddings", key: "weddings" as const },
   { href: "/calendar", key: "calendar" as const },
   { href: "/payments", key: "payments" as const, admin: true },

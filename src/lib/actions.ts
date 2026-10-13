@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { isLocale, LOCALE_COOKIE } from "@/lib/i18n";
 import { canManageCrm, requireAdmin, requireManager, requireUser } from "@/lib/auth";
-import { one, todayInTunis } from "@/lib/constants";
+import { normalizePhone, one, todayInTunis } from "@/lib/constants";
 import { rateToBps } from "@/lib/money";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -1654,6 +1654,102 @@ export async function setMemberActive(formData: FormData) {
   revalidatePath("/team");
   revalidatePath(`/team/${id}`);
   done(back, active ? "member_activated" : "member_deactivated");
+}
+
+function inquiryNote(inquiry: {
+  instagram: string;
+  wedding_date_text: string;
+  guest_count: string;
+  planner: string;
+  found_on: string;
+  email: string | null;
+}) {
+  return [
+    inquiry.instagram ? `Instagram: ${inquiry.instagram}` : "",
+    inquiry.wedding_date_text ? `Wedding date: ${inquiry.wedding_date_text}` : "",
+    inquiry.guest_count ? `Guests: ${inquiry.guest_count}` : "",
+    inquiry.planner ? `Planner: ${inquiry.planner}` : "",
+    inquiry.found_on ? `Found on: ${inquiry.found_on}` : "",
+    inquiry.email ? `Email: ${inquiry.email}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export async function addInquiryAsLead(formData: FormData) {
+  const profile = await requireManager();
+  const id = String(formData.get("id") ?? "");
+  const back = UUID.test(id) ? `/inquiries/${id}` : "/inquiries";
+  if (!UUID.test(id)) fail("/inquiries", "inquiry_missing");
+  const supabase = await createClient();
+  const { data: inquiry, error: lookupError } = await supabase
+    .from("inquiries")
+    .select("id, name, instagram, wedding_date_text, wedding_date, venue, guest_count, planner, found_on, email, phone, lead_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (lookupError) {
+    console.error("Inquiry lookup failed:", lookupError.code);
+    fail(back, "add_inquiry_failed");
+  }
+  if (!inquiry) fail("/inquiries", "inquiry_missing");
+  if (inquiry.lead_id) fail(back, "inquiry_already_added");
+
+  const phone = inquiry.phone || normalizePhone(String(formData.get("phone") ?? ""));
+  if (!phone) fail(back, "err_phone");
+
+  const { data: lead, error: leadError } = await supabase
+    .from("leads")
+    .insert({
+      partner_one_name: inquiry.name,
+      partner_two_name: "",
+      phone,
+      email: inquiry.email,
+      source: "other",
+      city: "",
+      venue: inquiry.venue,
+      wedding_date: inquiry.wedding_date,
+      status: "new",
+      created_by: profile.id,
+    })
+    .select("id")
+    .single();
+  if (leadError || !lead) {
+    console.error("Inquiry lead insert failed:", leadError?.code);
+    fail(back, "add_inquiry_failed");
+  }
+
+  const body = inquiryNote(inquiry);
+  if (body) {
+    const { error: noteError } = await supabase.from("notes").insert({
+      body,
+      lead_id: lead.id,
+      author_id: profile.id,
+    });
+    if (noteError) {
+      console.error("Inquiry note failed:", noteError.code);
+      await supabase.from("leads").delete().eq("id", lead.id);
+      fail(back, "add_inquiry_failed");
+    }
+  }
+
+  const { data: updated, error: updateError } = await supabase
+    .from("inquiries")
+    .update({ status: "added", lead_id: lead.id })
+    .eq("id", id)
+    .is("lead_id", null)
+    .select("id")
+    .maybeSingle();
+  if (updateError || !updated) {
+    console.error("Inquiry link failed:", updateError?.code);
+    await supabase.from("leads").delete().eq("id", lead.id);
+    fail(back, updateError ? "add_inquiry_failed" : "inquiry_already_added");
+  }
+
+  revalidatePath("/inquiries");
+  revalidatePath(back);
+  revalidatePath("/clients");
+  revalidatePath("/");
+  done(`/leads/${lead.id}`, "inquiry_added");
 }
 
 export async function setLocale(formData: FormData) {

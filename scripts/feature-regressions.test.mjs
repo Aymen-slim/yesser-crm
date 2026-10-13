@@ -579,7 +579,7 @@ test("assistant navigation includes CRM pages but excludes the dashboard", () =>
   });
   const render = (role) => Shell({ profile: { id: "user", role, full_name: "Test" }, locale: "en", messages: getMessages("en"), children: null });
   const links = findElement(render("assistant"), (node) => node.props?.items)?.props.items;
-  assert.deepEqual(Array.from(links, (link) => link.href), ["/clients", "/weddings", "/calendar", "/payments", "/expenses", "/packages", "/team"]);
+  assert.deepEqual(Array.from(links, (link) => link.href), ["/clients", "/inquiries", "/weddings", "/calendar", "/payments", "/expenses", "/packages", "/team"]);
   assert.ok(findElement(render("admin"), (node) => node.props?.items)?.props.items.some((link) => link.href === "/"));
   assert.deepEqual(Array.from(findElement(render("member"), (node) => node.props?.items)?.props.items, (link) => link.href), ["/", "/weddings", "/calendar"]);
 });
@@ -620,7 +620,7 @@ test("direct account-management actions stay admin-only", async () => {
 test("members cannot invoke management actions directly", async () => {
   await withSupabaseEnv(async () => {
     const { actions } = actionsFixture("member");
-    for (const name of ["saveLead", "convertLead", "saveClient", "deleteClient", "deleteLead", "savePackage", "deletePackage", "saveExtra", "deleteExtra", "saveWeddingOffer", "addWeddingExtra", "updateWeddingExtra", "removeWeddingExtra", "addWeddingDay", "removeWeddingDay", "addWeddingPlace", "removeWeddingPlace", "saveWeddingFeatures", "resetWeddingFeatures", "saveWedding", "deleteWedding", "savePayment", "deletePayment", "markPaymentPaid", "markPaymentUnpaid", "saveExpense", "deleteExpense", "saveInvoice", "saveContract", "resetContract", "assignMember", "updateAssignment", "unassignMember", "setCrewPaid", "deleteTask", "quickBook", "deleteWeddingFile"]) {
+    for (const name of ["saveLead", "convertLead", "addInquiryAsLead", "saveClient", "deleteClient", "deleteLead", "savePackage", "deletePackage", "saveExtra", "deleteExtra", "saveWeddingOffer", "addWeddingExtra", "updateWeddingExtra", "removeWeddingExtra", "addWeddingDay", "removeWeddingDay", "addWeddingPlace", "removeWeddingPlace", "saveWeddingFeatures", "resetWeddingFeatures", "saveWedding", "deleteWedding", "savePayment", "deletePayment", "markPaymentPaid", "markPaymentUnpaid", "saveExpense", "deleteExpense", "saveInvoice", "saveContract", "resetContract", "assignMember", "updateAssignment", "unassignMember", "setCrewPaid", "deleteTask", "quickBook", "deleteWeddingFile"]) {
       await assert.rejects(actions[name](new FormData()), { message: "REDIRECT:/" }, name);
     }
   });
@@ -1052,6 +1052,28 @@ test("Team profile failures show an error rather than an empty list or not-found
   for (const memberId of [undefined, "crew-a"]) {
     await assert.rejects(teamPayPage({}, memberId, crewLookup([], null, { code: "XX000" })), { message: "team_failed" });
   }
+});
+
+test("website inquiries accept either an email or a phone number", () => {
+  const { splitInquiryContact, parseInquiryDate } = load("src/lib/inquiries.ts");
+  const email = splitInquiryContact("  Ada@Example.com ");
+  assert.equal(email.email, "ada@example.com");
+  assert.equal(email.phone, null);
+  const local = splitInquiryContact("20 123 456");
+  assert.equal(local.email, null);
+  assert.equal(local.phone, "+21620123456");
+  const international = splitInquiryContact("+33 6 12 34 56 78");
+  assert.equal(international.email, null);
+  assert.equal(international.phone, "+33612345678");
+  for (const value of ["", "   ", "not-an-email", "hello@", "@example.com", "0612345678", "javascript:alert(1)"]) {
+    assert.equal(splitInquiryContact(value), null, value);
+  }
+  assert.equal(parseInquiryDate("2027-06-12"), "2027-06-12");
+  assert.equal(parseInquiryDate("12/06/2027"), "2027-06-12");
+  assert.equal(parseInquiryDate("12.6.2027"), "2027-06-12");
+  assert.equal(parseInquiryDate("31/02/2027"), null);
+  assert.equal(parseInquiryDate("June 2027"), null);
+  assert.equal(parseInquiryDate(""), null);
 });
 
 test("Team month navigation and member links preserve the selected monthly view", async () => {

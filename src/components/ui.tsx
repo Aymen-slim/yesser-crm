@@ -228,6 +228,7 @@ type Tone = keyof typeof TONES;
 
 const STATUS_TONES: Record<string, Tone> = {
   new: "blue",
+  added: "teal",
   contacted: "orange",
   quote_sent: "violet",
   booked: "teal",
